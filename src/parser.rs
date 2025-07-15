@@ -78,7 +78,7 @@ impl<'a> Parser<'a> {
 
     fn parse_outputs(&mut self) -> Result<BTreeMap<String, Output>> {
         self.expect_char('[')?;
-        let mut outputs = BTreeMap::new();
+        let mut outputs = BTreeMap::new(); // BTreeMap doesn't support with_capacity
 
         while self.peek() != Some(']') {
             self.expect_char('(')?;
