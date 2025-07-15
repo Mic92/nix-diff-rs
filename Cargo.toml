@@ -17,6 +17,7 @@ similar = { version = "2.4", features = ["text", "inline"] }
 atty = "0.2"
 tempfile = "3.8"
 tinyjson = "2.5"
+memchr = "2.7"
 
 [dev-dependencies]
 criterion = { version = "0.6", features = ["html_reports"] }
@@ -31,3 +32,4 @@ harness = false
 lto = true
 codegen-units = 1
 opt-level = 3
+debug = true

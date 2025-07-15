@@ -334,6 +334,7 @@ dependencies = [
  "atty",
  "criterion",
  "insta",
+ "memchr",
  "similar",
  "tempfile",
  "tinyjson",

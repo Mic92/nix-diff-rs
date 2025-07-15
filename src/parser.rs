@@ -1,5 +1,6 @@
 use crate::types::{Derivation, Output, StorePath};
 use anyhow::{anyhow, Context, Result};
+use memchr::memchr;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -163,7 +164,23 @@ impl<'a> Parser<'a> {
     fn parse_string(&mut self) -> Result<String> {
         self.skip_whitespace();
         self.expect_char('"')?;
-        let mut result = String::with_capacity(128); // Common size for derivation strings
+
+        // Find the closing quote position
+        let start = self.pos;
+        let end_pos =
+            memchr(b'"', &self.bytes[start..]).ok_or_else(|| anyhow!("Unterminated string"))?;
+
+        // Fast path: check if there are any escapes in the string
+        if memchr(b'\\', &self.bytes[start..start + end_pos]).is_none() {
+            // No escapes, we can just copy the bytes directly
+            let s = std::str::from_utf8(&self.bytes[start..start + end_pos])
+                .map_err(|e| anyhow!("Invalid UTF-8 in string: {}", e))?;
+            self.pos = start + end_pos + 1; // Skip past the closing quote
+            return Ok(s.to_string());
+        }
+
+        // Slow path: handle escapes
+        let mut result = String::with_capacity(end_pos); // Use actual string length as hint
 
         while let Some(ch) = self.peek() {
             if ch == '"' {
