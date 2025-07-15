@@ -302,11 +302,12 @@ pub fn get_derivation_path(store_path: &Path) -> Result<PathBuf> {
         .arg("--deriver")
         .arg(store_path)
         .output()
-        .context("Failed to run nix-store --query --deriver")?;
+        .with_context(|| format!("Failed to run nix-store --query --deriver for path: {}", store_path.display()))?;
 
     if !output.status.success() {
         return Err(anyhow!(
-            "Failed to query derivation: {}",
+            "Failed to query derivation for {}: {}",
+            store_path.display(),
             String::from_utf8_lossy(&output.stderr)
         ));
     }

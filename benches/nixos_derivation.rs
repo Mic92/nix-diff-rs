@@ -1,7 +1,9 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 use nix_diff::{diff::DiffContext, parser, types::DiffOrientation};
 use std::path::PathBuf;
 use std::process::Command;
+use anyhow::Context;
 
 fn generate_nixos_derivations() -> (PathBuf, PathBuf) {
     // Create two slightly different NixOS configurations
@@ -85,7 +87,15 @@ fn generate_nixos_derivations() -> (PathBuf, PathBuf) {
             &config1_path.to_string_lossy(),
         ])
         .output()
-        .expect("Failed to run nix-instantiate");
+        .expect("Failed to run nix-instantiate for config1");
+
+    if !output1.status.success() {
+        panic!(
+            "nix-instantiate failed for config1:\nstderr: {}\nstdout: {}",
+            String::from_utf8_lossy(&output1.stderr),
+            String::from_utf8_lossy(&output1.stdout)
+        );
+    }
 
     let output2 = Command::new("nix-instantiate")
         .args([
@@ -97,10 +107,26 @@ fn generate_nixos_derivations() -> (PathBuf, PathBuf) {
             &config2_path.to_string_lossy(),
         ])
         .output()
-        .expect("Failed to run nix-instantiate");
+        .expect("Failed to run nix-instantiate for config2");
+
+    if !output2.status.success() {
+        panic!(
+            "nix-instantiate failed for config2:\nstderr: {}\nstdout: {}",
+            String::from_utf8_lossy(&output2.stderr),
+            String::from_utf8_lossy(&output2.stdout)
+        );
+    }
 
     let drv1 = PathBuf::from(String::from_utf8_lossy(&output1.stdout).trim());
     let drv2 = PathBuf::from(String::from_utf8_lossy(&output2.stdout).trim());
+    
+    // Ensure the paths are not empty
+    if drv1.as_os_str().is_empty() {
+        panic!("nix-instantiate returned empty path for config1");
+    }
+    if drv2.as_os_str().is_empty() {
+        panic!("nix-instantiate returned empty path for config2");
+    }
 
     (drv1, drv2)
 }
@@ -110,15 +136,23 @@ fn benchmark_nixos_diff(c: &mut Criterion) {
 
     c.bench_function("nixos_derivation_parse", |b| {
         b.iter(|| {
-            let drv1 = parser::parse_derivation(black_box(&drv1_path)).unwrap();
-            let drv2 = parser::parse_derivation(black_box(&drv2_path)).unwrap();
+            let drv1 = parser::parse_derivation(black_box(&drv1_path))
+                .with_context(|| format!("Failed to parse derivation: {}", drv1_path.display()))
+                .unwrap();
+            let drv2 = parser::parse_derivation(black_box(&drv2_path))
+                .with_context(|| format!("Failed to parse derivation: {}", drv2_path.display()))
+                .unwrap();
             (drv1, drv2)
         })
     });
 
     c.bench_function("nixos_derivation_diff", |b| {
-        let drv1 = parser::parse_derivation(&drv1_path).unwrap();
-        let drv2 = parser::parse_derivation(&drv2_path).unwrap();
+        let drv1 = parser::parse_derivation(&drv1_path)
+            .with_context(|| format!("Failed to parse derivation: {}", drv1_path.display()))
+            .unwrap();
+        let drv2 = parser::parse_derivation(&drv2_path)
+            .with_context(|| format!("Failed to parse derivation: {}", drv2_path.display()))
+            .unwrap();
 
         b.iter(|| {
             let mut context = DiffContext::new(DiffOrientation::Line, 3);
