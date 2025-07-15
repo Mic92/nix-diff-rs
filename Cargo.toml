@@ -1,0 +1,30 @@
+[package]
+name = "nix-diff"
+version = "0.1.0"
+edition = "2021"
+authors = ["Joerg Thalheim <joerg@thalheim.io>"]
+license = "BSD-3-Clause"
+description = "Explain why two Nix derivations differ"
+repository = "https://github.com/nix-community/nix-diff-rs"
+
+[[bin]]
+name = "nix-diff"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+similar = { version = "2.4", features = ["text", "inline"] }
+atty = "0.2"
+
+[dev-dependencies]
+criterion = { version = "0.6", features = ["html_reports"] }
+tempfile = "3.8"
+
+[[bench]]
+name = "nixos_derivation"
+harness = false
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
