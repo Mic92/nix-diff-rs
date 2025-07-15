@@ -18,12 +18,17 @@ pub fn parse_derivation_string(input: &str) -> Result<Derivation> {
 
 struct Parser<'a> {
     input: &'a str,
+    bytes: &'a [u8],
     pos: usize,
 }
 
 impl<'a> Parser<'a> {
     fn new(input: &'a str) -> Self {
-        Parser { input, pos: 0 }
+        Parser {
+            input,
+            bytes: input.as_bytes(),
+            pos: 0,
+        }
     }
 
     fn parse_derivation(&mut self) -> Result<Derivation> {
@@ -280,11 +285,26 @@ impl<'a> Parser<'a> {
     }
 
     fn peek(&self) -> Option<char> {
-        self.input.chars().nth(self.pos)
+        if self.pos >= self.bytes.len() {
+            return None;
+        }
+        // Fast path for ASCII
+        let byte = self.bytes[self.pos];
+        if byte < 128 {
+            return Some(byte as char);
+        }
+        // Slower path for UTF-8
+        self.input[self.pos..].chars().next()
     }
 
     fn advance(&mut self) {
-        if let Some(ch) = self.peek() {
+        if self.pos >= self.bytes.len() {
+            return;
+        }
+        // Fast path for ASCII
+        if self.bytes[self.pos] < 128 {
+            self.pos += 1;
+        } else if let Some(ch) = self.input[self.pos..].chars().next() {
             self.pos += ch.len_utf8();
         }
     }
