@@ -1,6 +1,6 @@
 use crate::types::{Derivation, Output, StorePath};
 use anyhow::{anyhow, Context, Result};
-use memchr::memchr;
+use memchr::{memchr, memchr2};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -179,49 +179,61 @@ impl<'a> Parser<'a> {
             return Ok(s.to_string());
         }
 
-        // Slow path: handle escapes
+        // Slow path: handle escapes using SIMD to find next escape or quote
         let mut result = String::with_capacity(end_pos); // Use actual string length as hint
+        let mut current_pos = self.pos;
 
-        while let Some(ch) = self.peek() {
-            if ch == '"' {
-                self.advance();
-                return Ok(result);
-            } else if ch == '\\' {
-                self.advance();
-                match self.peek() {
-                    Some('n') => {
-                        self.advance();
-                        result.push('\n');
+        loop {
+            // Find next quote or backslash using SIMD
+            if let Some(special_pos) = memchr2(b'"', b'\\', &self.bytes[current_pos..]) {
+                // Copy everything before the special character
+                if special_pos > 0 {
+                    let chunk = std::str::from_utf8(&self.bytes[current_pos..current_pos + special_pos])
+                        .map_err(|e| anyhow!("Invalid UTF-8 in string: {}", e))?;
+                    result.push_str(chunk);
+                }
+                
+                current_pos += special_pos;
+                let special_char = self.bytes[current_pos];
+                
+                if special_char == b'"' {
+                    // Found closing quote
+                    self.pos = current_pos + 1;
+                    return Ok(result);
+                } else {
+                    // Handle escape
+                    current_pos += 1; // Skip backslash
+                    if current_pos >= self.bytes.len() {
+                        return Err(anyhow!("Unexpected end of input in string"));
                     }
-                    Some('t') => {
-                        self.advance();
-                        result.push('\t');
+                    
+                    let escaped = self.bytes[current_pos];
+                    match escaped {
+                        b'n' => result.push('\n'),
+                        b't' => result.push('\t'),
+                        b'r' => result.push('\r'),
+                        b'\\' => result.push('\\'),
+                        b'"' => result.push('"'),
+                        _ => {
+                            // For non-ASCII or other escapes, need to handle UTF-8
+                            if escaped < 128 {
+                                result.push(escaped as char);
+                            } else {
+                                // Get the full UTF-8 character
+                                let ch = self.input[current_pos..].chars().next()
+                                    .ok_or_else(|| anyhow!("Invalid escape sequence"))?;
+                                result.push(ch);
+                                current_pos += ch.len_utf8() - 1; // -1 because we'll increment below
+                            }
+                        }
                     }
-                    Some('r') => {
-                        self.advance();
-                        result.push('\r');
-                    }
-                    Some('\\') => {
-                        self.advance();
-                        result.push('\\');
-                    }
-                    Some('"') => {
-                        self.advance();
-                        result.push('"');
-                    }
-                    Some(c) => {
-                        self.advance();
-                        result.push(c);
-                    }
-                    None => return Err(anyhow!("Unexpected end of input in string")),
+                    current_pos += 1;
                 }
             } else {
-                result.push(ch);
-                self.advance();
+                // No more quotes or escapes, this is an error
+                return Err(anyhow!("Unterminated string"));
             }
         }
-
-        Err(anyhow!("Unterminated string"))
     }
 
     fn parse_optional_string(&mut self) -> Result<Option<String>> {
