@@ -163,7 +163,7 @@ impl<'a> Parser<'a> {
     fn parse_string(&mut self) -> Result<String> {
         self.skip_whitespace();
         self.expect_char('"')?;
-        let mut result = String::new();
+        let mut result = String::with_capacity(128); // Common size for derivation strings
 
         while let Some(ch) = self.peek() {
             if ch == '"' {
