@@ -1,4 +1,5 @@
 use crate::types::*;
+use similar::{ChangeTag, TextDiff as SimilarTextDiff};
 use std::fmt::Write as FmtWrite;
 use std::io::{self, Write};
 
@@ -30,7 +31,11 @@ impl Renderer {
     pub fn render(&self, diff: &DerivationDiff) -> io::Result<()> {
         let mut stdout = io::stdout();
         let output = self.format_derivation_diff(diff, 0);
-        write!(stdout, "{output}")?;
+        if output.is_empty() {
+            writeln!(stdout, "The derivations are identical.")?;
+        } else {
+            write!(stdout, "{output}")?;
+        }
         stdout.flush()
     }
 
@@ -70,7 +75,15 @@ impl Renderer {
                     for (i, arg_diff) in arg_diffs.iter().enumerate() {
                         self.write_indent(&mut output, indent + 2);
                         let _ = writeln!(&mut output, "Argument {i}:");
-                        self.format_string_diff(&mut output, arg_diff, indent + 4);
+                        // For multi-line arguments (like scripts), use text diff
+                        if let StringDiff::Changed { old, new } = arg_diff {
+                            if old.contains('\n') || new.contains('\n') {
+                                let text_diff = self.create_text_diff(old, new);
+                                self.format_text_diff(&mut output, &text_diff, indent + 4);
+                            } else {
+                                self.format_string_diff(&mut output, arg_diff, indent + 4);
+                            }
+                        }
                     }
                 }
 
@@ -410,5 +423,25 @@ impl Renderer {
         } else {
             ""
         }
+    }
+
+    fn create_text_diff(&self, old: &str, new: &str) -> TextDiff {
+        let diff = match DiffOrientation::Line {
+            DiffOrientation::Line => SimilarTextDiff::from_lines(old, new),
+            DiffOrientation::Word => SimilarTextDiff::from_words(old, new),
+            DiffOrientation::Character => SimilarTextDiff::from_chars(old, new),
+        };
+
+        let mut lines = Vec::new();
+        for change in diff.iter_all_changes() {
+            let line = change.value().to_string();
+            match change.tag() {
+                ChangeTag::Equal => lines.push(DiffLine::Context(line)),
+                ChangeTag::Insert => lines.push(DiffLine::Added(line)),
+                ChangeTag::Delete => lines.push(DiffLine::Removed(line)),
+            }
+        }
+
+        TextDiff::Text(lines)
     }
 }

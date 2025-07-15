@@ -1,0 +1,6 @@
+---
+source: tests/snapshot_test.rs
+assertion_line: 44
+expression: output
+---
+The derivations are identical.

@@ -76,7 +76,7 @@ fn generate_nixos_derivations() -> (PathBuf, PathBuf) {
 
     // Generate derivations using nix-instantiate
     let output1 = Command::new("nix-instantiate")
-        .args(&[
+        .args([
             "<nixpkgs/nixos>",
             "-A",
             "system",
@@ -88,7 +88,7 @@ fn generate_nixos_derivations() -> (PathBuf, PathBuf) {
         .expect("Failed to run nix-instantiate");
 
     let output2 = Command::new("nix-instantiate")
-        .args(&[
+        .args([
             "<nixpkgs/nixos>",
             "-A",
             "system",

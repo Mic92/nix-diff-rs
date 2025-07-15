@@ -139,12 +139,19 @@ impl DiffContext {
             let arg1 = args1.get(i).map(|s| s.as_str()).unwrap_or("");
             let arg2 = args2.get(i).map(|s| s.as_str()).unwrap_or("");
 
-            if let Some(diff) = self.diff_strings(arg1, arg2) {
-                diffs.push(diff);
+            if arg1 != arg2 {
+                diffs.push(StringDiff::Changed {
+                    old: arg1.to_string(),
+                    new: arg2.to_string(),
+                });
             }
         }
 
-        Some(ArgumentsDiff::Changed(diffs))
+        if diffs.is_empty() {
+            None
+        } else {
+            Some(ArgumentsDiff::Changed(diffs))
+        }
     }
 
     fn diff_sources(
