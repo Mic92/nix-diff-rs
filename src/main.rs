@@ -1,12 +1,13 @@
 mod diff;
+mod instantiate;
 mod parser;
 mod render;
 mod types;
 
 use anyhow::{anyhow, Context, Result};
 use std::env;
-use std::path::PathBuf;
-use types::{ColorMode, DiffOrientation};
+use std::path::{Path, PathBuf};
+use types::{ColorMode, DiffOrientation, Derivation};
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -73,13 +74,8 @@ fn main() -> Result<()> {
         std::process::exit(1);
     }
 
-    let path1 = parser::get_derivation_path(&paths[0])?;
-    let path2 = parser::get_derivation_path(&paths[1])?;
-
-    let drv1 = parser::parse_derivation(&path1)
-        .with_context(|| format!("Failed to parse first derivation: {}", path1.display()))?;
-    let drv2 = parser::parse_derivation(&path2)
-        .with_context(|| format!("Failed to parse second derivation: {}", path2.display()))?;
+    let (drv1, path1) = load_derivation(&paths[0])?;
+    let (drv2, path2) = load_derivation(&paths[1])?;
 
     let mut diff_context = diff::DiffContext::new(orientation, context_lines);
     let diff = diff_context.diff_derivations(&path1, &path2, &drv1, &drv2)?;
@@ -93,15 +89,38 @@ fn main() -> Result<()> {
 fn print_help() {
     eprintln!("nix-diff - Explain why two Nix derivations differ");
     eprintln!();
-    eprintln!("Usage: nix-diff [OPTIONS] <PATH1> <PATH2>");
+    eprintln!("Usage: nix-diff [OPTIONS] <INPUT1> <INPUT2>");
     eprintln!();
     eprintln!("Arguments:");
-    eprintln!("  <PATH1>    First derivation path (.drv file or store path)");
-    eprintln!("  <PATH2>    Second derivation path (.drv file or store path)");
+    eprintln!("  <INPUT1>    First input (.drv file, store path, .nix file, or flake#attr)");
+    eprintln!("  <INPUT2>    Second input (.drv file, store path, .nix file, or flake#attr)");
     eprintln!();
     eprintln!("Options:");
     eprintln!("  --color <MODE>         Color mode: always, auto, never (default: auto)");
     eprintln!("  --orientation <MODE>   Diff orientation: line, word, character (default: line)");
     eprintln!("  --context <LINES>      Number of context lines (default: 3)");
     eprintln!("  -h, --help             Show this help message");
+}
+
+fn load_derivation(input: &Path) -> Result<(Derivation, PathBuf)> {
+    let input_str = input.to_string_lossy();
+    
+    if input_str.ends_with(".drv") {
+        // Direct .drv file
+        let drv = parser::parse_derivation(input)
+            .with_context(|| format!("Failed to parse derivation: {}", input.display()))?;
+        Ok((drv, input.to_path_buf()))
+    } else if input_str.contains('#') || input_str.ends_with(".nix") {
+        // Flake reference or .nix file
+        let drv = instantiate::instantiate_and_parse(&input_str)
+            .with_context(|| format!("Failed to instantiate: {input_str}"))?;
+        let path = PathBuf::from(format!("<instantiated from {input_str}>"));
+        Ok((drv, path))
+    } else {
+        // Try as store path
+        let path = parser::get_derivation_path(input)?;
+        let drv = parser::parse_derivation(&path)
+            .with_context(|| format!("Failed to parse derivation: {}", path.display()))?;
+        Ok((drv, path))
+    }
 }

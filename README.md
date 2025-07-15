@@ -5,7 +5,11 @@ A Rust port of [nix-diff](https://github.com/Gabriel439/nix-diff), a tool to exp
 ## Features
 
 - Compare two Nix derivations and show their differences
-- Support for both `.drv` files and realized store paths
+- Support for multiple input types:
+  - `.drv` files (pre-built derivations)
+  - Realized store paths
+  - `.nix` files (will be instantiated automatically)
+  - Flake references (e.g., `nixpkgs#hello`, `path:/path/to/flake#package`)
 - Colored output with support for `NO_COLOR` environment variable
 - Configurable diff orientation (line, word, character)
 - Minimal dependencies
@@ -19,11 +23,11 @@ nix build
 ## Usage
 
 ```bash
-nix-diff [OPTIONS] <PATH1> <PATH2>
+nix-diff [OPTIONS] <INPUT1> <INPUT2>
 
 Arguments:
-  <PATH1>    First derivation path (.drv file or store path)
-  <PATH2>    Second derivation path (.drv file or store path)
+  <INPUT1>    First input (.drv file, store path, .nix file, or flake#attr)
+  <INPUT2>    Second input (.drv file, store path, .nix file, or flake#attr)
 
 Options:
   --color <MODE>         Color mode: always, auto, never (default: auto)
@@ -44,11 +48,28 @@ Compare realized store paths:
 nix-diff /nix/store/abc123-hello /nix/store/def456-hello
 ```
 
+Compare Nix files (will be instantiated automatically):
+```bash
+nix-diff hello.nix goodbye.nix
+```
+
+Compare flake outputs:
+```bash
+# Compare packages from flakes
+nix-diff nixpkgs#hello nixpkgs#hello-wayland
+
+# Compare local flake outputs
+nix-diff .#packages.x86_64-linux.myapp .#packages.x86_64-linux.myapp-dev
+
+# Compare using flake paths
+nix-diff path:/path/to/flake1#package path:/path/to/flake2#package
+```
+
 Disable colors:
 ```bash
-nix-diff --color never path1 path2
+nix-diff --color never input1 input2
 # or
-NO_COLOR=1 nix-diff path1 path2
+NO_COLOR=1 nix-diff input1 input2
 ```
 
 ## Development

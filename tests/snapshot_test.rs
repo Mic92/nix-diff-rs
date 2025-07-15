@@ -37,13 +37,13 @@ fn run_nix_diff(file1: &str, file2: &str) -> String {
 
 #[test]
 fn test_hello_diff_snapshot() {
-    let output = run_nix_diff("hello-v1.nix", "hello-v2.nix");
+    let output = run_nix_diff("hello-flake-v1/default.nix", "hello-flake-v2/default.nix");
     assert_snapshot!(output);
 }
 
 #[test]
 fn test_identical_derivations() {
-    let output = run_nix_diff("hello-v1.nix", "hello-v1.nix");
+    let output = run_nix_diff("hello-flake-v1/default.nix", "hello-flake-v1/default.nix");
     assert_snapshot!(output);
 }
 
@@ -53,14 +53,14 @@ fn test_hello_diff_with_context() {
 
     // Generate derivations
     let output1 = Command::new("nix-instantiate")
-        .arg(tests_dir.join("hello-v1.nix"))
+        .arg(tests_dir.join("hello-flake-v1/default.nix"))
         .output()
-        .expect("Failed to instantiate hello-v1.nix");
+        .expect("Failed to instantiate hello-flake-v1/default.nix");
 
     let output2 = Command::new("nix-instantiate")
-        .arg(tests_dir.join("hello-v2.nix"))
+        .arg(tests_dir.join("hello-flake-v2/default.nix"))
         .output()
-        .expect("Failed to instantiate hello-v2.nix");
+        .expect("Failed to instantiate hello-flake-v2/default.nix");
 
     let drv1 = String::from_utf8_lossy(&output1.stdout).trim().to_string();
     let drv2 = String::from_utf8_lossy(&output2.stdout).trim().to_string();
@@ -83,14 +83,14 @@ fn test_word_diff_orientation() {
 
     // Generate derivations
     let output1 = Command::new("nix-instantiate")
-        .arg(tests_dir.join("hello-v1.nix"))
+        .arg(tests_dir.join("hello-flake-v1/default.nix"))
         .output()
-        .expect("Failed to instantiate hello-v1.nix");
+        .expect("Failed to instantiate hello-flake-v1/default.nix");
 
     let output2 = Command::new("nix-instantiate")
-        .arg(tests_dir.join("hello-v2.nix"))
+        .arg(tests_dir.join("hello-flake-v2/default.nix"))
         .output()
-        .expect("Failed to instantiate hello-v2.nix");
+        .expect("Failed to instantiate hello-flake-v2/default.nix");
 
     let drv1 = String::from_utf8_lossy(&output1.stdout).trim().to_string();
     let drv2 = String::from_utf8_lossy(&output2.stdout).trim().to_string();

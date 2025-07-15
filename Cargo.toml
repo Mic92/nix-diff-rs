@@ -15,9 +15,11 @@ path = "src/main.rs"
 anyhow = "1.0"
 similar = { version = "2.4", features = ["text", "inline"] }
 atty = "0.2"
+tempfile = "3.8"
+tinyjson = "2.5"
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.6", features = ["html_reports"] }
 tempfile = "3.8"
 insta = "1.34"
 
