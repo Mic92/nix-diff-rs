@@ -46,8 +46,14 @@ fn test_nix_file_diff() {
     // Run nix-diff directly on .nix files
     let output = Command::new(env!("CARGO_BIN_EXE_nix-diff"))
         .args([
-            tests_dir.join("hello-flake-v1/default.nix").to_str().unwrap(),
-            tests_dir.join("hello-flake-v2/default.nix").to_str().unwrap(),
+            tests_dir
+                .join("hello-flake-v1/default.nix")
+                .to_str()
+                .unwrap(),
+            tests_dir
+                .join("hello-flake-v2/default.nix")
+                .to_str()
+                .unwrap(),
         ])
         .env("NO_COLOR", "1")
         .output()
@@ -74,8 +80,16 @@ fn test_flake_diff() {
     // Run nix-diff on flake references with fully qualified attributes
     let output = Command::new(env!("CARGO_BIN_EXE_nix-diff"))
         .args([
-            &format!("path:{}#packages.{}.default", tests_dir.join("hello-flake-v1").to_str().unwrap(), system),
-            &format!("path:{}#packages.{}.default", tests_dir.join("hello-flake-v2").to_str().unwrap(), system),
+            &format!(
+                "path:{}#packages.{}.default",
+                tests_dir.join("hello-flake-v1").to_str().unwrap(),
+                system
+            ),
+            &format!(
+                "path:{}#packages.{}.default",
+                tests_dir.join("hello-flake-v2").to_str().unwrap(),
+                system
+            ),
         ])
         .env("NO_COLOR", "1")
         .output()
@@ -83,7 +97,7 @@ fn test_flake_diff() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     if !output.status.success() {
         eprintln!("nix-diff failed with stderr: {stderr}");
         eprintln!("stdout: {stdout}");

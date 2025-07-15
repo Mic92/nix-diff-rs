@@ -7,7 +7,7 @@ mod types;
 use anyhow::{anyhow, Context, Result};
 use std::env;
 use std::path::{Path, PathBuf};
-use types::{ColorMode, DiffOrientation, Derivation};
+use types::{ColorMode, Derivation, DiffOrientation};
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -104,7 +104,7 @@ fn print_help() {
 
 fn load_derivation(input: &Path) -> Result<(Derivation, PathBuf)> {
     let input_str = input.to_string_lossy();
-    
+
     if input_str.ends_with(".drv") {
         // Direct .drv file
         let drv = parser::parse_derivation(input)

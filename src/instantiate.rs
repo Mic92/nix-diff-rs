@@ -5,8 +5,8 @@ use std::process::Command;
 use tempfile::TempDir;
 use tinyjson::JsonValue;
 
-use crate::types::Derivation;
 use crate::parser::parse_derivation;
+use crate::types::Derivation;
 
 /// Instantiate a .nix file, flake, or expression and parse the resulting .drv file
 pub fn instantiate_and_parse(input: &str) -> Result<Derivation> {
@@ -21,7 +21,9 @@ pub fn instantiate_and_parse(input: &str) -> Result<Derivation> {
         instantiate_file(input, &gcroot_path)?
     } else {
         // Try as store path first
-        return Err(anyhow!("Input must be a .drv file, .nix file, or flake reference"));
+        return Err(anyhow!(
+            "Input must be a .drv file, .nix file, or flake reference"
+        ));
     };
 
     // Parse the resulting .drv file
@@ -31,7 +33,8 @@ pub fn instantiate_and_parse(input: &str) -> Result<Derivation> {
 /// Instantiate a flake reference
 fn instantiate_flake(flake_ref: &str, gcroot_path: &Path) -> Result<String> {
     // Extract attribute from flake reference
-    let (flake_path, attr) = flake_ref.split_once('#')
+    let (flake_path, attr) = flake_ref
+        .split_once('#')
         .ok_or_else(|| anyhow!("Invalid flake reference: missing #"))?;
 
     // First get flake metadata to resolve to store path and narHash
@@ -41,20 +44,25 @@ fn instantiate_flake(flake_ref: &str, gcroot_path: &Path) -> Result<String> {
             "nix-command flakes",
             "flake",
             "metadata",
-            "--json", flake_path
+            "--json",
+            flake_path,
         ])
         .output()
         .context("Failed to run nix flake metadata")?;
 
     if !metadata_output.status.success() {
-        bail!("nix flake metadata failed: {}", String::from_utf8_lossy(&metadata_output.stderr));
+        bail!(
+            "nix flake metadata failed: {}",
+            String::from_utf8_lossy(&metadata_output.stderr)
+        );
     }
 
     // Parse JSON using tinyjson to extract the path and narHash fields
     let metadata_str = String::from_utf8(metadata_output.stdout)
         .context("Failed to parse metadata output as UTF-8")?;
 
-    let metadata: JsonValue = metadata_str.parse()
+    let metadata: JsonValue = metadata_str
+        .parse()
         .context("Failed to parse flake metadata JSON")?;
 
     let store_path = metadata["path"]
@@ -88,16 +96,16 @@ fn instantiate_file(file_path: &str, gcroot_path: &Path) -> Result<String> {
 /// Common function to instantiate and process nix-instantiate output
 fn run_nix_instantiate(mut cmd: Command, gcroot_path: &Path) -> Result<String> {
     cmd.args(["--add-root", &gcroot_path.to_string_lossy(), "--indirect"]);
-    let output = cmd.output()
-        .context("Failed to run nix-instantiate")?;
+    let output = cmd.output().context("Failed to run nix-instantiate")?;
 
     if !output.status.success() {
-        bail!("nix-instantiate failed: {}", String::from_utf8_lossy(&output.stderr));
+        bail!(
+            "nix-instantiate failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
-    let gcroot_result = String::from_utf8(output.stdout)?
-        .trim()
-        .to_string();
+    let gcroot_result = String::from_utf8(output.stdout)?.trim().to_string();
 
     // Read the symlink to get the actual .drv path
     // --add-root --indirect always creates a symlink pointing to the store
@@ -108,7 +116,8 @@ fn run_nix_instantiate(mut cmd: Command, gcroot_path: &Path) -> Result<String> {
 
     if !Path::new(&drv_path)
         .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("drv")) {
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("drv"))
+    {
         bail!("nix-instantiate did not return a .drv file: {}", drv_path);
     }
 
