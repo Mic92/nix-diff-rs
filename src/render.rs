@@ -122,7 +122,7 @@ impl Renderer {
                     output,
                     "{}+ Added: {}{}",
                     self.green(),
-                    out.path.path.display(),
+                    out.path.path_str,
                     self.reset()
                 );
             }
@@ -132,7 +132,7 @@ impl Renderer {
                     output,
                     "{}- Removed: {}{}",
                     self.red(),
-                    out.path.path.display(),
+                    out.path.path_str,
                     self.reset()
                 );
             }
@@ -185,13 +185,7 @@ impl Renderer {
 
                 for path in removed {
                     self.write_indent(output, indent + 2);
-                    let _ = writeln!(
-                        output,
-                        "{}- {}{}",
-                        self.red(),
-                        path.path.display(),
-                        self.reset()
-                    );
+                    let _ = writeln!(output, "{}- {}{}", self.red(), path.path_str, self.reset());
                 }
 
                 for path in added {
@@ -200,7 +194,7 @@ impl Renderer {
                         output,
                         "{}+ {}{}",
                         self.green(),
-                        path.path.display(),
+                        path.path_str,
                         self.reset()
                     );
                 }
@@ -211,7 +205,7 @@ impl Renderer {
                         output,
                         "{}~ {}{}",
                         self.yellow(),
-                        src_diff.path.path.display(),
+                        src_diff.path.path_str,
                         self.reset()
                     );
                     self.format_text_diff(output, &src_diff.diff, indent + 4);
@@ -232,13 +226,7 @@ impl Renderer {
 
                 for path in removed {
                     self.write_indent(output, indent + 2);
-                    let _ = writeln!(
-                        output,
-                        "{}- {}{}",
-                        self.red(),
-                        path.path.display(),
-                        self.reset()
-                    );
+                    let _ = writeln!(output, "{}- {}{}", self.red(), path.path_str, self.reset());
                 }
 
                 for path in added {
@@ -247,7 +235,7 @@ impl Renderer {
                         output,
                         "{}+ {}{}",
                         self.green(),
-                        path.path.display(),
+                        path.path_str,
                         self.reset()
                     );
                 }
@@ -258,7 +246,7 @@ impl Renderer {
                         output,
                         "{}~ {}{}",
                         self.yellow(),
-                        inp_diff.path.path.display(),
+                        inp_diff.path.path_str,
                         self.reset()
                     );
 

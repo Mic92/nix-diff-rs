@@ -153,10 +153,10 @@ fn benchmark_nixos_diff(c: &mut Criterion) {
 
     c.bench_function("nixos_derivation_parse", |b| {
         b.iter(|| {
-            let drv1 = parser::parse_derivation(black_box(&drv1_path))
+            let drv1 = parser::parse_derivation(black_box(&drv1_path.to_string_lossy()))
                 .with_context(|| format!("Failed to parse derivation: {}", drv1_path.display()))
                 .unwrap();
-            let drv2 = parser::parse_derivation(black_box(&drv2_path))
+            let drv2 = parser::parse_derivation(black_box(&drv2_path.to_string_lossy()))
                 .with_context(|| format!("Failed to parse derivation: {}", drv2_path.display()))
                 .unwrap();
             (drv1, drv2)
@@ -167,10 +167,10 @@ fn benchmark_nixos_diff(c: &mut Criterion) {
     group.sample_size(30); // Reduce sample size to avoid timeout
 
     group.bench_function("diff", |b| {
-        let drv1 = parser::parse_derivation(&drv1_path)
+        let drv1 = parser::parse_derivation(&drv1_path.to_string_lossy())
             .with_context(|| format!("Failed to parse derivation: {}", drv1_path.display()))
             .unwrap();
-        let drv2 = parser::parse_derivation(&drv2_path)
+        let drv2 = parser::parse_derivation(&drv2_path.to_string_lossy())
             .with_context(|| format!("Failed to parse derivation: {}", drv2_path.display()))
             .unwrap();
 

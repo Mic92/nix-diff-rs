@@ -107,7 +107,7 @@ fn load_derivation(input: &Path) -> Result<(Derivation, PathBuf)> {
 
     if input_str.ends_with(".drv") {
         // Direct .drv file
-        let drv = parser::parse_derivation(input)
+        let drv = parser::parse_derivation(&input_str)
             .with_context(|| format!("Failed to parse derivation: {}", input.display()))?;
         Ok((drv, input.to_path_buf()))
     } else if input_str.contains('#') || input_str.ends_with(".nix") {
@@ -119,7 +119,7 @@ fn load_derivation(input: &Path) -> Result<(Derivation, PathBuf)> {
     } else {
         // Try as store path
         let path = parser::get_derivation_path(input)?;
-        let drv = parser::parse_derivation(&path)
+        let drv = parser::parse_derivation(&path.to_string_lossy())
             .with_context(|| format!("Failed to parse derivation: {}", path.display()))?;
         Ok((drv, path))
     }

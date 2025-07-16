@@ -3,7 +3,7 @@ use anyhow::Result;
 use similar::{ChangeTag, TextDiff as SimilarTextDiff};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub struct DiffContext {
     already_compared: HashSet<(String, String)>,
@@ -51,10 +51,7 @@ impl DiffContext {
 
         let outputs = self.diff_outputs(&drv1.outputs, &drv2.outputs);
         let platform = self.diff_strings(&drv1.platform, &drv2.platform);
-        let builder = self.diff_strings(
-            &drv1.builder.path.to_string_lossy(),
-            &drv2.builder.path.to_string_lossy(),
-        );
+        let builder = self.diff_strings(&drv1.builder.path_str, &drv2.builder.path_str);
         let args = self.diff_arguments(&drv1.args, &drv2.args);
         let sources = self.diff_sources(&drv1.input_sources, &drv2.input_sources)?;
         let inputs = self.diff_inputs(&drv1.input_derivations, &drv2.input_derivations)?;
@@ -85,10 +82,7 @@ impl DiffContext {
         for name in all_names {
             match (outputs1.get(&name), outputs2.get(&name)) {
                 (Some(o1), Some(o2)) if o1 != o2 => {
-                    let path_diff = self.diff_strings(
-                        &o1.path.path.to_string_lossy(),
-                        &o2.path.path.to_string_lossy(),
-                    );
+                    let path_diff = self.diff_strings(&o1.path.path_str, &o2.path.path_str);
                     let hash_algo_diff =
                         self.diff_optional_strings(&o1.hash_algorithm, &o2.hash_algorithm);
                     let hash_diff = self.diff_optional_strings(&o1.hash, &o2.hash);
@@ -165,8 +159,8 @@ impl DiffContext {
 
         let mut common = Vec::new();
         for path in common_paths {
-            if let Ok(content1) = fs::read(&path.path) {
-                if let Ok(content2) = fs::read(&path.path) {
+            if let Ok(content1) = fs::read(&path.path_str) {
+                if let Ok(content2) = fs::read(&path.path_str) {
                     if content1 != content2 {
                         let diff = self.diff_file_contents(&content1, &content2);
                         common.push(SourceDiff {
@@ -223,12 +217,13 @@ impl DiffContext {
 
             // Try to load and compare the derivations
             let derivation_diff = if let (Ok(drv1), Ok(drv2)) = (
-                crate::parser::parse_derivation(&path.path),
-                crate::parser::parse_derivation(&path.path),
+                crate::parser::parse_derivation(&path.path_str),
+                crate::parser::parse_derivation(&path.path_str),
             ) {
                 if drv1 != drv2 {
+                    let path_buf = PathBuf::from(&path.path_str);
                     Some(Box::new(
-                        self.diff_derivations(&path.path, &path.path, &drv1, &drv2)?,
+                        self.diff_derivations(&path_buf, &path_buf, &drv1, &drv2)?,
                     ))
                 } else {
                     None

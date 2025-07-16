@@ -3,12 +3,14 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct StorePath {
-    pub path: PathBuf,
+    pub path_str: String,
 }
 
 impl StorePath {
     pub fn new(path: PathBuf) -> Self {
-        StorePath { path }
+        StorePath {
+            path_str: path.to_string_lossy().into_owned(),
+        }
     }
 }
 

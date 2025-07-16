@@ -27,7 +27,7 @@ pub fn instantiate_and_parse(input: &str) -> Result<Derivation> {
     };
 
     // Parse the resulting .drv file
-    parse_derivation(Path::new(&drv_path))
+    parse_derivation(&drv_path)
 }
 
 /// Instantiate a flake reference

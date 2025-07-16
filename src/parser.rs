@@ -5,9 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub fn parse_derivation(path: &Path) -> Result<Derivation> {
+pub fn parse_derivation(path: &str) -> Result<Derivation> {
     let content = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read derivation file: {}", path.display()))?;
+        .with_context(|| format!("Failed to read derivation file: {}", path))?;
 
     parse_derivation_string(&content)
 }
@@ -188,14 +188,15 @@ impl<'a> Parser<'a> {
             if let Some(special_pos) = memchr2(b'"', b'\\', &self.bytes[current_pos..]) {
                 // Copy everything before the special character
                 if special_pos > 0 {
-                    let chunk = std::str::from_utf8(&self.bytes[current_pos..current_pos + special_pos])
-                        .map_err(|e| anyhow!("Invalid UTF-8 in string: {}", e))?;
+                    let chunk =
+                        std::str::from_utf8(&self.bytes[current_pos..current_pos + special_pos])
+                            .map_err(|e| anyhow!("Invalid UTF-8 in string: {}", e))?;
                     result.push_str(chunk);
                 }
-                
+
                 current_pos += special_pos;
                 let special_char = self.bytes[current_pos];
-                
+
                 if special_char == b'"' {
                     // Found closing quote
                     self.pos = current_pos + 1;
@@ -206,7 +207,7 @@ impl<'a> Parser<'a> {
                     if current_pos >= self.bytes.len() {
                         return Err(anyhow!("Unexpected end of input in string"));
                     }
-                    
+
                     let escaped = self.bytes[current_pos];
                     match escaped {
                         b'n' => result.push('\n'),
@@ -220,7 +221,9 @@ impl<'a> Parser<'a> {
                                 result.push(escaped as char);
                             } else {
                                 // Get the full UTF-8 character
-                                let ch = self.input[current_pos..].chars().next()
+                                let ch = self.input[current_pos..]
+                                    .chars()
+                                    .next()
                                     .ok_or_else(|| anyhow!("Invalid escape sequence"))?;
                                 result.push(ch);
                                 current_pos += ch.len_utf8() - 1; // -1 because we'll increment below
