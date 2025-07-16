@@ -30,7 +30,7 @@ impl DiffContext {
         let key = (path1.to_vec(), path2.to_vec());
 
         if self.already_compared.contains(&key) {
-            return Ok(DerivationDiff::Changed {
+            return Ok(DerivationDiff {
                 original: drv1.clone(),
                 new: drv2.clone(),
                 outputs: OutputsDiff::Identical,
@@ -53,7 +53,7 @@ impl DiffContext {
         let inputs = self.diff_inputs(&drv1.input_derivations, &drv2.input_derivations)?;
         let env = self.diff_environment(&drv1.env, &drv2.env);
 
-        Ok(DerivationDiff::Changed {
+        Ok(DerivationDiff {
             original: drv1.clone(),
             new: drv2.clone(),
             outputs,
@@ -130,7 +130,7 @@ impl DiffContext {
             let arg2 = args2.get(i).map(|s| s.as_slice()).unwrap_or(b"");
 
             if arg1 != arg2 {
-                diffs.push(StringDiff::Changed {
+                diffs.push(StringDiff {
                     old: arg1.to_vec(),
                     new: arg2.to_vec(),
                 });
@@ -140,7 +140,7 @@ impl DiffContext {
         if diffs.is_empty() {
             None
         } else {
-            Some(ArgumentsDiff::Changed(diffs))
+            Some(diffs)
         }
     }
 
@@ -174,7 +174,7 @@ impl DiffContext {
         if added.is_empty() && removed.is_empty() && common.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(SourcesDiff::Changed {
+            Ok(Some(SourcesDiff {
                 added,
                 removed,
                 common,
@@ -203,7 +203,7 @@ impl DiffContext {
                 let removed_outputs: BTreeSet<_> = outputs1.difference(outputs2).cloned().collect();
 
                 if !added_outputs.is_empty() || !removed_outputs.is_empty() {
-                    Some(OutputSetDiff::Changed {
+                    Some(OutputSetDiff {
                         added: added_outputs,
                         removed: removed_outputs,
                     })
@@ -244,7 +244,7 @@ impl DiffContext {
         if added.is_empty() && removed.is_empty() && changed.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(InputsDiff::Changed {
+            Ok(Some(InputsDiff {
                 added,
                 removed,
                 changed,
@@ -281,7 +281,7 @@ impl DiffContext {
         if diffs.is_empty() {
             None
         } else {
-            Some(EnvironmentDiff::Changed(diffs))
+            Some(diffs)
         }
     }
 
@@ -289,7 +289,7 @@ impl DiffContext {
         if s1 == s2 {
             None
         } else {
-            Some(StringDiff::Changed {
+            Some(StringDiff {
                 old: s1.to_vec(),
                 new: s2.to_vec(),
             })
@@ -304,11 +304,11 @@ impl DiffContext {
         match (s1, s2) {
             (Some(a), Some(b)) => self.diff_bytes(a, b),
             (None, None) => None,
-            (Some(a), None) => Some(StringDiff::Changed {
+            (Some(a), None) => Some(StringDiff {
                 old: a.clone(),
                 new: Vec::new(),
             }),
-            (None, Some(b)) => Some(StringDiff::Changed {
+            (None, Some(b)) => Some(StringDiff {
                 old: Vec::new(),
                 new: b.clone(),
             }),

@@ -19,18 +19,16 @@ pub struct Output {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum DerivationDiff {
-    Changed {
-        original: Derivation,
-        new: Derivation,
-        outputs: OutputsDiff,
-        platform: Option<StringDiff>,
-        builder: Option<StringDiff>,
-        args: Option<ArgumentsDiff>,
-        sources: Option<SourcesDiff>,
-        inputs: Option<InputsDiff>,
-        env: Option<EnvironmentDiff>,
-    },
+pub struct DerivationDiff {
+    pub original: Derivation,
+    pub new: Derivation,
+    pub outputs: OutputsDiff,
+    pub platform: Option<StringDiff>,
+    pub builder: Option<StringDiff>,
+    pub args: Option<ArgumentsDiff>,
+    pub sources: Option<SourcesDiff>,
+    pub inputs: Option<InputsDiff>,
+    pub env: Option<EnvironmentDiff>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -58,20 +56,13 @@ pub enum OutputDetailDiff {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ArgumentsDiff {
-    Identical,
-    Changed(Vec<StringDiff>),
-}
+pub type ArgumentsDiff = Vec<StringDiff>;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum SourcesDiff {
-    Identical,
-    Changed {
-        added: Vec<Vec<u8>>,
-        removed: Vec<Vec<u8>>,
-        common: Vec<SourceDiff>,
-    },
+pub struct SourcesDiff {
+    pub added: Vec<Vec<u8>>,
+    pub removed: Vec<Vec<u8>>,
+    pub common: Vec<SourceDiff>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -81,13 +72,10 @@ pub struct SourceDiff {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum InputsDiff {
-    Identical,
-    Changed {
-        added: Vec<Vec<u8>>,
-        removed: Vec<Vec<u8>>,
-        changed: Vec<InputDiff>,
-    },
+pub struct InputsDiff {
+    pub added: Vec<Vec<u8>>,
+    pub removed: Vec<Vec<u8>>,
+    pub changed: Vec<InputDiff>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -98,20 +86,12 @@ pub struct InputDiff {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum OutputSetDiff {
-    Added(BTreeSet<Vec<u8>>),
-    Removed(BTreeSet<Vec<u8>>),
-    Changed {
-        added: BTreeSet<Vec<u8>>,
-        removed: BTreeSet<Vec<u8>>,
-    },
+pub struct OutputSetDiff {
+    pub added: BTreeSet<Vec<u8>>,
+    pub removed: BTreeSet<Vec<u8>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum EnvironmentDiff {
-    Identical,
-    Changed(BTreeMap<Vec<u8>, Option<EnvVarDiff>>),
-}
+pub type EnvironmentDiff = BTreeMap<Vec<u8>, Option<EnvVarDiff>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum EnvVarDiff {
@@ -121,9 +101,9 @@ pub enum EnvVarDiff {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum StringDiff {
-    Identical,
-    Changed { old: Vec<u8>, new: Vec<u8> },
+pub struct StringDiff {
+    pub old: Vec<u8>,
+    pub new: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

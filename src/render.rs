@@ -41,74 +41,69 @@ impl Renderer {
     fn format_derivation_diff(&self, diff: &DerivationDiff, indent: usize) -> Vec<u8> {
         let mut output = Vec::new();
 
-        match diff {
-            DerivationDiff::Changed {
-                outputs,
-                platform,
-                builder,
-                args,
-                sources,
-                inputs,
-                env,
-                ..
-            } => {
-                if let OutputsDiff::Changed(output_diffs) = outputs {
-                    self.write_section(&mut output, b"Outputs", indent);
-                    for out_diff in output_diffs {
-                        self.format_output_diff(&mut output, out_diff, indent + 2);
-                    }
-                }
+        let DerivationDiff {
+            outputs,
+            platform,
+            builder,
+            args,
+            sources,
+            inputs,
+            env,
+            ..
+        } = diff;
 
-                if let Some(plat_diff) = platform {
-                    self.write_section(&mut output, b"Platform", indent);
-                    self.format_string_diff(&mut output, plat_diff, indent + 2);
-                }
+        if let OutputsDiff::Changed(output_diffs) = outputs {
+            self.write_section(&mut output, b"Outputs", indent);
+            for out_diff in output_diffs {
+                self.format_output_diff(&mut output, out_diff, indent + 2);
+            }
+        }
 
-                if let Some(builder_diff) = builder {
-                    self.write_section(&mut output, b"Builder", indent);
-                    self.format_string_diff(&mut output, builder_diff, indent + 2);
-                }
+        if let Some(plat_diff) = platform {
+            self.write_section(&mut output, b"Platform", indent);
+            self.format_string_diff(&mut output, plat_diff, indent + 2);
+        }
 
-                if let Some(ArgumentsDiff::Changed(arg_diffs)) = args {
-                    self.write_section(&mut output, b"Arguments", indent);
-                    for (i, arg_diff) in arg_diffs.iter().enumerate() {
-                        self.write_indent(&mut output, indent + 2);
-                        output.extend_from_slice(b"Argument ");
-                        output.extend_from_slice(i.to_string().as_bytes());
-                        output.extend_from_slice(b":\n");
-                        // For multi-line arguments (like scripts), show them as a text diff
-                        if let StringDiff::Changed { old, new } = arg_diff {
-                            if old.contains(&b'\n') || new.contains(&b'\n') {
-                                // Create a proper line-by-line diff
-                                let text_diff = self.create_text_diff(old, new);
-                                self.format_text_diff(&mut output, &text_diff, indent + 4);
-                            } else {
-                                self.format_string_diff(&mut output, arg_diff, indent + 4);
-                            }
-                        } else {
-                            self.format_string_diff(&mut output, arg_diff, indent + 4);
-                        }
-                    }
-                }
+        if let Some(builder_diff) = builder {
+            self.write_section(&mut output, b"Builder", indent);
+            self.format_string_diff(&mut output, builder_diff, indent + 2);
+        }
 
-                if let Some(src_diff) = sources {
-                    self.format_sources_diff(&mut output, src_diff, indent);
+        if let Some(arg_diffs) = args {
+            self.write_section(&mut output, b"Arguments", indent);
+            for (i, arg_diff) in arg_diffs.iter().enumerate() {
+                self.write_indent(&mut output, indent + 2);
+                output.extend_from_slice(b"Argument ");
+                output.extend_from_slice(i.to_string().as_bytes());
+                output.extend_from_slice(b":\n");
+                // For multi-line arguments (like scripts), show them as a text diff
+                let StringDiff { old, new } = arg_diff;
+                if old.contains(&b'\n') || new.contains(&b'\n') {
+                    // Create a proper line-by-line diff
+                    let text_diff = self.create_text_diff(old, new);
+                    self.format_text_diff(&mut output, &text_diff, indent + 4);
+                } else {
+                    self.format_string_diff(&mut output, arg_diff, indent + 4);
                 }
+            }
+        }
 
-                if let Some(inp_diff) = inputs {
-                    self.format_inputs_diff(&mut output, inp_diff, indent);
-                }
+        if let Some(src_diff) = sources {
+            self.format_sources_diff(&mut output, src_diff, indent);
+        }
 
-                if let Some(EnvironmentDiff::Changed(env_diffs)) = env {
-                    self.write_section(&mut output, b"Environment", indent);
-                    for (key, var_diff) in env_diffs {
-                        if let Some(diff) = var_diff {
-                            self.write_indent(&mut output, indent + 2);
-                            output.extend_from_slice(key);
-                            output.extend_from_slice(b":\n");
-                            self.format_env_var_diff(&mut output, diff, indent + 4);
-                        }
-                    }
+        if let Some(inp_diff) = inputs {
+            self.format_inputs_diff(&mut output, inp_diff, indent);
+        }
+
+        if let Some(env_diffs) = env {
+            self.write_section(&mut output, b"Environment", indent);
+            for (key, var_diff) in env_diffs {
+                if let Some(diff) = var_diff {
+                    self.write_indent(&mut output, indent + 2);
+                    output.extend_from_slice(key);
+                    output.extend_from_slice(b":\n");
+                    self.format_env_var_diff(&mut output, diff, indent + 4);
                 }
             }
         }
@@ -165,158 +160,123 @@ impl Renderer {
     }
 
     fn format_string_diff(&self, output: &mut Vec<u8>, diff: &StringDiff, indent: usize) {
-        match diff {
-            StringDiff::Identical => {}
-            StringDiff::Changed { old, new } => {
-                self.write_indent(output, indent);
-                output.extend_from_slice(self.red());
-                output.extend_from_slice(b"- ");
-                output.extend_from_slice(old);
-                output.extend_from_slice(self.reset());
-                output.push(b'\n');
+        let StringDiff { old, new } = diff;
+        self.write_indent(output, indent);
+        output.extend_from_slice(self.red());
+        output.extend_from_slice(b"- ");
+        output.extend_from_slice(old);
+        output.extend_from_slice(self.reset());
+        output.push(b'\n');
 
-                self.write_indent(output, indent);
-                output.extend_from_slice(self.green());
-                output.extend_from_slice(b"+ ");
-                output.extend_from_slice(new);
-                output.extend_from_slice(self.reset());
-                output.push(b'\n');
-            }
-        }
+        self.write_indent(output, indent);
+        output.extend_from_slice(self.green());
+        output.extend_from_slice(b"+ ");
+        output.extend_from_slice(new);
+        output.extend_from_slice(self.reset());
+        output.push(b'\n');
     }
 
     fn format_sources_diff(&self, output: &mut Vec<u8>, diff: &SourcesDiff, indent: usize) {
-        match diff {
-            SourcesDiff::Identical => {}
-            SourcesDiff::Changed {
-                added,
-                removed,
-                common,
-            } => {
-                self.write_section(output, b"Sources", indent);
+        let SourcesDiff {
+            added,
+            removed,
+            common,
+        } = diff;
+        self.write_section(output, b"Sources", indent);
 
-                for path in removed {
-                    self.write_indent(output, indent + 2);
-                    output.extend_from_slice(self.red());
-                    output.extend_from_slice(b"- ");
-                    output.extend_from_slice(path);
-                    output.extend_from_slice(self.reset());
-                    output.push(b'\n');
-                }
+        for path in removed {
+            self.write_indent(output, indent + 2);
+            output.extend_from_slice(self.red());
+            output.extend_from_slice(b"- ");
+            output.extend_from_slice(path);
+            output.extend_from_slice(self.reset());
+            output.push(b'\n');
+        }
 
-                for path in added {
-                    self.write_indent(output, indent + 2);
-                    output.extend_from_slice(self.green());
-                    output.extend_from_slice(b"+ ");
-                    output.extend_from_slice(path);
-                    output.extend_from_slice(self.reset());
-                    output.push(b'\n');
-                }
+        for path in added {
+            self.write_indent(output, indent + 2);
+            output.extend_from_slice(self.green());
+            output.extend_from_slice(b"+ ");
+            output.extend_from_slice(path);
+            output.extend_from_slice(self.reset());
+            output.push(b'\n');
+        }
 
-                for src_diff in common {
-                    self.write_indent(output, indent + 2);
-                    output.extend_from_slice(self.yellow());
-                    output.extend_from_slice(b"~ ");
-                    output.extend_from_slice(&src_diff.path);
-                    output.extend_from_slice(self.reset());
-                    output.push(b'\n');
-                    self.format_text_diff(output, &src_diff.diff, indent + 4);
-                }
-            }
+        for src_diff in common {
+            self.write_indent(output, indent + 2);
+            output.extend_from_slice(self.yellow());
+            output.extend_from_slice(b"~ ");
+            output.extend_from_slice(&src_diff.path);
+            output.extend_from_slice(self.reset());
+            output.push(b'\n');
+            self.format_text_diff(output, &src_diff.diff, indent + 4);
         }
     }
 
     fn format_inputs_diff(&self, output: &mut Vec<u8>, diff: &InputsDiff, indent: usize) {
-        match diff {
-            InputsDiff::Identical => {}
-            InputsDiff::Changed {
-                added,
-                removed,
-                changed,
-            } => {
-                self.write_section(output, b"Input derivations", indent);
+        let InputsDiff {
+            added,
+            removed,
+            changed,
+        } = diff;
+        self.write_section(output, b"Input derivations", indent);
 
-                for path in removed {
-                    self.write_indent(output, indent + 2);
-                    output.extend_from_slice(self.red());
-                    output.extend_from_slice(b"- ");
-                    output.extend_from_slice(path);
-                    output.extend_from_slice(self.reset());
-                    output.push(b'\n');
-                }
+        for path in removed {
+            self.write_indent(output, indent + 2);
+            output.extend_from_slice(self.red());
+            output.extend_from_slice(b"- ");
+            output.extend_from_slice(path);
+            output.extend_from_slice(self.reset());
+            output.push(b'\n');
+        }
 
-                for path in added {
-                    self.write_indent(output, indent + 2);
-                    output.extend_from_slice(self.green());
-                    output.extend_from_slice(b"+ ");
-                    output.extend_from_slice(path);
-                    output.extend_from_slice(self.reset());
-                    output.push(b'\n');
-                }
+        for path in added {
+            self.write_indent(output, indent + 2);
+            output.extend_from_slice(self.green());
+            output.extend_from_slice(b"+ ");
+            output.extend_from_slice(path);
+            output.extend_from_slice(self.reset());
+            output.push(b'\n');
+        }
 
-                for inp_diff in changed {
-                    self.write_indent(output, indent + 2);
-                    output.extend_from_slice(self.yellow());
-                    output.extend_from_slice(b"~ ");
-                    output.extend_from_slice(&inp_diff.path);
-                    output.extend_from_slice(self.reset());
-                    output.push(b'\n');
+        for inp_diff in changed {
+            self.write_indent(output, indent + 2);
+            output.extend_from_slice(self.yellow());
+            output.extend_from_slice(b"~ ");
+            output.extend_from_slice(&inp_diff.path);
+            output.extend_from_slice(self.reset());
+            output.push(b'\n');
 
-                    if let Some(out_diff) = &inp_diff.outputs {
-                        self.write_indent(output, indent + 4);
-                        output.extend_from_slice(b"Output changes:\n");
-                        self.format_output_set_diff(output, out_diff, indent + 6);
-                    }
+            if let Some(out_diff) = &inp_diff.outputs {
+                self.write_indent(output, indent + 4);
+                output.extend_from_slice(b"Output changes:\n");
+                self.format_output_set_diff(output, out_diff, indent + 6);
+            }
 
-                    if let Some(drv_diff) = &inp_diff.derivation {
-                        let sub_output = self.format_derivation_diff(drv_diff, indent + 4);
-                        output.extend_from_slice(&sub_output);
-                    }
-                }
+            if let Some(drv_diff) = &inp_diff.derivation {
+                let sub_output = self.format_derivation_diff(drv_diff, indent + 4);
+                output.extend_from_slice(&sub_output);
             }
         }
     }
 
     fn format_output_set_diff(&self, output: &mut Vec<u8>, diff: &OutputSetDiff, indent: usize) {
-        match diff {
-            OutputSetDiff::Added(outputs) => {
-                for out in outputs {
-                    self.write_indent(output, indent);
-                    output.extend_from_slice(self.green());
-                    output.extend_from_slice(b"+ ");
-                    output.extend_from_slice(out);
-                    output.extend_from_slice(self.reset());
-                    output.push(b'\n');
-                }
-            }
-            OutputSetDiff::Removed(outputs) => {
-                for out in outputs {
-                    self.write_indent(output, indent);
-                    output.extend_from_slice(self.red());
-                    output.extend_from_slice(b"- ");
-                    output.extend_from_slice(out);
-                    output.extend_from_slice(self.reset());
-                    output.push(b'\n');
-                }
-            }
-            OutputSetDiff::Changed { added, removed } => {
-                for out in removed {
-                    self.write_indent(output, indent);
-                    output.extend_from_slice(self.red());
-                    output.extend_from_slice(b"- ");
-                    output.extend_from_slice(out);
-                    output.extend_from_slice(self.reset());
-                    output.push(b'\n');
-                }
-                for out in added {
-                    self.write_indent(output, indent);
-                    output.extend_from_slice(self.green());
-                    output.extend_from_slice(b"+ ");
-                    output.extend_from_slice(out);
-                    output.extend_from_slice(self.reset());
-                    output.push(b'\n');
-                }
-            }
+        let OutputSetDiff { added, removed } = diff;
+        for out in removed {
+            self.write_indent(output, indent);
+            output.extend_from_slice(self.red());
+            output.extend_from_slice(b"- ");
+            output.extend_from_slice(out);
+            output.extend_from_slice(self.reset());
+            output.push(b'\n');
+        }
+        for out in added {
+            self.write_indent(output, indent);
+            output.extend_from_slice(self.green());
+            output.extend_from_slice(b"+ ");
+            output.extend_from_slice(out);
+            output.extend_from_slice(self.reset());
+            output.push(b'\n');
         }
     }
 
