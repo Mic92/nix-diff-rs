@@ -1,6 +1,6 @@
 use crate::types::*;
 use similar::{ChangeTag, TextDiff as SimilarTextDiff};
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 
 const RED: &[u8] = b"\x1b[31m";
 const GREEN: &[u8] = b"\x1b[32m";
@@ -375,7 +375,7 @@ impl Renderer {
         match self.color_mode {
             ColorMode::Always => true,
             ColorMode::Never => false,
-            ColorMode::Auto => atty::is(atty::Stream::Stdout),
+            ColorMode::Auto => io::stdout().is_terminal(),
         }
     }
 
