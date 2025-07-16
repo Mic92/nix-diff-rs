@@ -36,6 +36,7 @@
 
         devShells.default = pkgs.mkShell {
           inputsFrom = [ self'.packages.default ];
+          NIX_CFLAGS_COMPILE = "-Wno-error";
           packages = with pkgs; [
             cargo
             rustc
