@@ -102,25 +102,25 @@ fn print_help() {
     eprintln!("  -h, --help             Show this help message");
 }
 
-fn load_derivation(input: &Path) -> Result<(Derivation, String)> {
+fn load_derivation(input: &Path) -> Result<(Derivation, Vec<u8>)> {
     let input_str = input.to_string_lossy();
 
     if input_str.ends_with(".drv") {
         // Direct .drv file
         let drv = parser::parse_derivation(&input_str)
             .with_context(|| format!("Failed to parse derivation: {}", input.display()))?;
-        Ok((drv, input_str.to_string()))
+        Ok((drv, input_str.as_bytes().to_vec()))
     } else if input_str.contains('#') || input_str.ends_with(".nix") {
         // Flake reference or .nix file
         let drv = instantiate::instantiate_and_parse(&input_str)
             .with_context(|| format!("Failed to instantiate: {input_str}"))?;
         let path = format!("<instantiated from {input_str}>");
-        Ok((drv, path))
+        Ok((drv, path.into_bytes()))
     } else {
         // Try as store path
         let path = parser::get_derivation_path(&input.to_string_lossy())?;
         let drv = parser::parse_derivation(&path)
             .with_context(|| format!("Failed to parse derivation: {}", path))?;
-        Ok((drv, path))
+        Ok((drv, path.into_bytes()))
     }
 }

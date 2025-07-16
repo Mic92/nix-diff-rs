@@ -47,15 +47,15 @@ impl<'a> Parser<'a> {
         self.expect_char(',')?;
 
         // Parse platform
-        let platform = self.parse_string()?;
+        let platform = self.parse_bytes()?;
         self.expect_char(',')?;
 
         // Parse builder
-        let builder = self.parse_string()?;
+        let builder = self.parse_bytes()?;
         self.expect_char(',')?;
 
         // Parse args
-        let args = self.parse_string_list()?;
+        let args = self.parse_bytes_list()?;
         self.expect_char(',')?;
 
         // Parse environment
@@ -74,19 +74,19 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_outputs(&mut self) -> Result<BTreeMap<String, Output>> {
+    fn parse_outputs(&mut self) -> Result<BTreeMap<Vec<u8>, Output>> {
         self.expect_char('[')?;
         let mut outputs = BTreeMap::new(); // BTreeMap doesn't support with_capacity
 
         while self.peek() != Some(']') {
             self.expect_char('(')?;
-            let name = self.parse_string()?;
+            let name = self.parse_bytes()?;
             self.expect_char(',')?;
-            let path = self.parse_string()?;
+            let path = self.parse_bytes()?;
             self.expect_char(',')?;
-            let hash_algorithm = self.parse_optional_string()?;
+            let hash_algorithm = self.parse_optional_bytes()?;
             self.expect_char(',')?;
-            let hash = self.parse_optional_string()?;
+            let hash = self.parse_optional_bytes()?;
             self.expect_char(')')?;
 
             outputs.insert(
@@ -107,15 +107,15 @@ impl<'a> Parser<'a> {
         Ok(outputs)
     }
 
-    fn parse_input_derivations(&mut self) -> Result<BTreeMap<String, BTreeSet<String>>> {
+    fn parse_input_derivations(&mut self) -> Result<BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>>> {
         self.expect_char('[')?;
         let mut inputs = BTreeMap::new();
 
         while self.peek() != Some(']') {
             self.expect_char('(')?;
-            let path = self.parse_string()?;
+            let path = self.parse_bytes()?;
             self.expect_char(',')?;
-            let outputs = self.parse_string_set()?;
+            let outputs = self.parse_bytes_set()?;
             self.expect_char(')')?;
 
             inputs.insert(path, outputs);
@@ -129,20 +129,20 @@ impl<'a> Parser<'a> {
         Ok(inputs)
     }
 
-    fn parse_input_sources(&mut self) -> Result<BTreeSet<String>> {
-        let paths = self.parse_string_list()?;
+    fn parse_input_sources(&mut self) -> Result<BTreeSet<Vec<u8>>> {
+        let paths = self.parse_bytes_list()?;
         Ok(paths.into_iter().collect())
     }
 
-    fn parse_environment(&mut self) -> Result<BTreeMap<String, String>> {
+    fn parse_environment(&mut self) -> Result<BTreeMap<Vec<u8>, Vec<u8>>> {
         self.expect_char('[')?;
         let mut env = BTreeMap::new();
 
         while self.peek() != Some(']') {
             self.expect_char('(')?;
-            let key = self.parse_string()?;
+            let key = self.parse_bytes()?;
             self.expect_char(',')?;
-            let value = self.parse_string()?;
+            let value = self.parse_bytes()?;
             self.expect_char(')')?;
 
             env.insert(key, value);
@@ -156,7 +156,7 @@ impl<'a> Parser<'a> {
         Ok(env)
     }
 
-    fn parse_string(&mut self) -> Result<String> {
+    fn parse_bytes(&mut self) -> Result<Vec<u8>> {
         self.skip_whitespace();
         self.expect_char('"')?;
 
@@ -168,14 +168,12 @@ impl<'a> Parser<'a> {
         // Fast path: check if there are any escapes in the string
         if memchr(b'\\', &self.bytes[start..start + end_pos]).is_none() {
             // No escapes, we can just copy the bytes directly
-            let s = std::str::from_utf8(&self.bytes[start..start + end_pos])
-                .map_err(|e| anyhow!("Invalid UTF-8 in string: {}", e))?;
             self.pos = start + end_pos + 1; // Skip past the closing quote
-            return Ok(s.to_string());
+            return Ok(self.bytes[start..start + end_pos].to_vec());
         }
 
         // Slow path: handle escapes using SIMD to find next escape or quote
-        let mut result = String::with_capacity(end_pos); // Use actual string length as hint
+        let mut result = Vec::with_capacity(end_pos); // Use actual string length as hint
         let mut current_pos = self.pos;
 
         loop {
@@ -183,10 +181,7 @@ impl<'a> Parser<'a> {
             if let Some(special_pos) = memchr2(b'"', b'\\', &self.bytes[current_pos..]) {
                 // Copy everything before the special character
                 if special_pos > 0 {
-                    let chunk =
-                        std::str::from_utf8(&self.bytes[current_pos..current_pos + special_pos])
-                            .map_err(|e| anyhow!("Invalid UTF-8 in string: {}", e))?;
-                    result.push_str(chunk);
+                    result.extend_from_slice(&self.bytes[current_pos..current_pos + special_pos]);
                 }
 
                 current_pos += special_pos;
@@ -205,24 +200,14 @@ impl<'a> Parser<'a> {
 
                     let escaped = self.bytes[current_pos];
                     match escaped {
-                        b'n' => result.push('\n'),
-                        b't' => result.push('\t'),
-                        b'r' => result.push('\r'),
-                        b'\\' => result.push('\\'),
-                        b'"' => result.push('"'),
+                        b'n' => result.push(b'\n'),
+                        b't' => result.push(b'\t'),
+                        b'r' => result.push(b'\r'),
+                        b'\\' => result.push(b'\\'),
+                        b'"' => result.push(b'"'),
                         _ => {
-                            // For non-ASCII or other escapes, need to handle UTF-8
-                            if escaped < 128 {
-                                result.push(escaped as char);
-                            } else {
-                                // Get the full UTF-8 character
-                                let ch = self.input[current_pos..]
-                                    .chars()
-                                    .next()
-                                    .ok_or_else(|| anyhow!("Invalid escape sequence"))?;
-                                result.push(ch);
-                                current_pos += ch.len_utf8() - 1; // -1 because we'll increment below
-                            }
+                            // For any other escape, just push the byte as is
+                            result.push(escaped);
                         }
                     }
                     current_pos += 1;
@@ -234,22 +219,22 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_optional_string(&mut self) -> Result<Option<String>> {
+    fn parse_optional_bytes(&mut self) -> Result<Option<Vec<u8>>> {
         self.skip_whitespace();
         if self.peek() == Some('"') {
-            Ok(Some(self.parse_string()?))
+            Ok(Some(self.parse_bytes()?))
         } else {
             self.expect_str("")?;
             Ok(None)
         }
     }
 
-    fn parse_string_list(&mut self) -> Result<Vec<String>> {
+    fn parse_bytes_list(&mut self) -> Result<Vec<Vec<u8>>> {
         self.expect_char('[')?;
         let mut items = Vec::new();
 
         while self.peek() != Some(']') {
-            items.push(self.parse_string()?);
+            items.push(self.parse_bytes()?);
             if self.peek() == Some(',') {
                 self.advance();
             }
@@ -259,12 +244,12 @@ impl<'a> Parser<'a> {
         Ok(items)
     }
 
-    fn parse_string_set(&mut self) -> Result<BTreeSet<String>> {
+    fn parse_bytes_set(&mut self) -> Result<BTreeSet<Vec<u8>>> {
         self.expect_char('[')?;
         let mut items = BTreeSet::new();
 
         while self.peek() != Some(']') {
-            items.insert(self.parse_string()?);
+            items.insert(self.parse_bytes()?);
             if self.peek() == Some(',') {
                 self.advance();
             }
@@ -378,7 +363,7 @@ mod tests {
         let drv = r#"Derive([("out","/nix/store/abc-test","","")],[],[],"/bin/bash","/nix/store/xyz-builder",["-c","echo hello"],[("name","test"),("out","/nix/store/abc-test")])"#;
         let result = parse_derivation_string(drv).unwrap();
         assert_eq!(result.outputs.len(), 1);
-        assert_eq!(result.platform, "/bin/bash");
-        assert_eq!(result.args, vec!["-c", "echo hello"]);
+        assert_eq!(result.platform, b"/bin/bash");
+        assert_eq!(result.args, vec![b"-c".to_vec(), b"echo hello".to_vec()]);
     }
 }

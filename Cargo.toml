@@ -13,7 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
-similar = { version = "2.4", features = ["text", "inline"] }
+similar = { version = "2.4", features = ["inline", "bytes", "text"] }
 atty = "0.2"
 tempfile = "3.8"
 tinyjson = "2.5"

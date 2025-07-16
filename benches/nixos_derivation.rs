@@ -177,8 +177,8 @@ fn benchmark_nixos_diff(c: &mut Criterion) {
             let mut context = DiffContext::new(DiffOrientation::Line, 3);
             context
                 .diff_derivations(
-                    black_box(&drv1_path),
-                    black_box(&drv2_path),
+                    black_box(drv1_path.as_bytes()),
+                    black_box(drv2_path.as_bytes()),
                     black_box(&drv1),
                     black_box(&drv2),
                 )

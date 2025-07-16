@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 
 pub struct DiffContext {
-    already_compared: HashSet<(String, String)>,
+    already_compared: HashSet<(Vec<u8>, Vec<u8>)>,
     orientation: DiffOrientation,
     #[allow(dead_code)]
     context_lines: usize,
@@ -22,15 +22,12 @@ impl DiffContext {
 
     pub fn diff_derivations(
         &mut self,
-        path1: &str,
-        path2: &str,
+        path1: &[u8],
+        path2: &[u8],
         drv1: &Derivation,
         drv2: &Derivation,
     ) -> Result<DerivationDiff> {
-        let key = (
-            path1.to_string(),
-            path2.to_string(),
-        );
+        let key = (path1.to_vec(), path2.to_vec());
 
         if self.already_compared.contains(&key) {
             return Ok(DerivationDiff::Changed {
@@ -49,8 +46,8 @@ impl DiffContext {
         self.already_compared.insert(key);
 
         let outputs = self.diff_outputs(&drv1.outputs, &drv2.outputs);
-        let platform = self.diff_strings(&drv1.platform, &drv2.platform);
-        let builder = self.diff_strings(&drv1.builder, &drv2.builder);
+        let platform = self.diff_bytes(&drv1.platform, &drv2.platform);
+        let builder = self.diff_bytes(&drv1.builder, &drv2.builder);
         let args = self.diff_arguments(&drv1.args, &drv2.args);
         let sources = self.diff_sources(&drv1.input_sources, &drv2.input_sources)?;
         let inputs = self.diff_inputs(&drv1.input_derivations, &drv2.input_derivations)?;
@@ -71,8 +68,8 @@ impl DiffContext {
 
     fn diff_outputs(
         &self,
-        outputs1: &BTreeMap<String, Output>,
-        outputs2: &BTreeMap<String, Output>,
+        outputs1: &BTreeMap<Vec<u8>, Output>,
+        outputs2: &BTreeMap<Vec<u8>, Output>,
     ) -> OutputsDiff {
         let mut diffs = Vec::new();
 
@@ -81,10 +78,10 @@ impl DiffContext {
         for name in all_names {
             match (outputs1.get(&name), outputs2.get(&name)) {
                 (Some(o1), Some(o2)) if o1 != o2 => {
-                    let path_diff = self.diff_strings(&o1.path, &o2.path);
+                    let path_diff = self.diff_bytes(&o1.path, &o2.path);
                     let hash_algo_diff =
-                        self.diff_optional_strings(&o1.hash_algorithm, &o2.hash_algorithm);
-                    let hash_diff = self.diff_optional_strings(&o1.hash, &o2.hash);
+                        self.diff_optional_bytes(&o1.hash_algorithm, &o2.hash_algorithm);
+                    let hash_diff = self.diff_optional_bytes(&o1.hash, &o2.hash);
 
                     diffs.push(OutputDiff {
                         name: name.clone(),
@@ -120,7 +117,7 @@ impl DiffContext {
         }
     }
 
-    fn diff_arguments(&self, args1: &[String], args2: &[String]) -> Option<ArgumentsDiff> {
+    fn diff_arguments(&self, args1: &[Vec<u8>], args2: &[Vec<u8>]) -> Option<ArgumentsDiff> {
         if args1 == args2 {
             return None;
         }
@@ -129,13 +126,13 @@ impl DiffContext {
         let max_len = args1.len().max(args2.len());
 
         for i in 0..max_len {
-            let arg1 = args1.get(i).map(|s| s.as_str()).unwrap_or("");
-            let arg2 = args2.get(i).map(|s| s.as_str()).unwrap_or("");
+            let arg1 = args1.get(i).map(|s| s.as_slice()).unwrap_or(b"");
+            let arg2 = args2.get(i).map(|s| s.as_slice()).unwrap_or(b"");
 
             if arg1 != arg2 {
                 diffs.push(StringDiff::Changed {
-                    old: arg1.to_string(),
-                    new: arg2.to_string(),
+                    old: arg1.to_vec(),
+                    new: arg2.to_vec(),
                 });
             }
         }
@@ -149,8 +146,8 @@ impl DiffContext {
 
     fn diff_sources(
         &self,
-        sources1: &BTreeSet<String>,
-        sources2: &BTreeSet<String>,
+        sources1: &BTreeSet<Vec<u8>>,
+        sources2: &BTreeSet<Vec<u8>>,
     ) -> Result<Option<SourcesDiff>> {
         let added: Vec<_> = sources2.difference(sources1).cloned().collect();
         let removed: Vec<_> = sources1.difference(sources2).cloned().collect();
@@ -158,14 +155,17 @@ impl DiffContext {
 
         let mut common = Vec::new();
         for path in common_paths {
-            if let Ok(content1) = fs::read(&path) {
-                if let Ok(content2) = fs::read(&path) {
-                    if content1 != content2 {
-                        let diff = self.diff_file_contents(&content1, &content2);
-                        common.push(SourceDiff {
-                            path: path.clone(),
-                            diff,
-                        });
+            // Convert bytes to path for file system operations
+            if let Ok(path_str) = std::str::from_utf8(&path) {
+                if let Ok(content1) = fs::read(path_str) {
+                    if let Ok(content2) = fs::read(path_str) {
+                        if content1 != content2 {
+                            let diff = self.diff_file_contents(&content1, &content2);
+                            common.push(SourceDiff {
+                                path: path.clone(),
+                                diff,
+                            });
+                        }
                     }
                 }
             }
@@ -184,8 +184,8 @@ impl DiffContext {
 
     fn diff_inputs(
         &mut self,
-        inputs1: &BTreeMap<String, BTreeSet<String>>,
-        inputs2: &BTreeMap<String, BTreeSet<String>>,
+        inputs1: &BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>>,
+        inputs2: &BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>>,
     ) -> Result<Option<InputsDiff>> {
         let keys1: BTreeSet<_> = inputs1.keys().cloned().collect();
         let keys2: BTreeSet<_> = inputs2.keys().cloned().collect();
@@ -215,14 +215,16 @@ impl DiffContext {
             };
 
             // Try to load and compare the derivations
-            let derivation_diff = if let (Ok(drv1), Ok(drv2)) = (
-                crate::parser::parse_derivation(&path),
-                crate::parser::parse_derivation(&path),
-            ) {
-                if drv1 != drv2 {
-                    Some(Box::new(
-                        self.diff_derivations(&path, &path, &drv1, &drv2)?,
-                    ))
+            let derivation_diff = if let Ok(path_str) = std::str::from_utf8(&path) {
+                if let (Ok(drv1), Ok(drv2)) = (
+                    crate::parser::parse_derivation(path_str),
+                    crate::parser::parse_derivation(path_str),
+                ) {
+                    if drv1 != drv2 {
+                        Some(Box::new(self.diff_derivations(&path, &path, &drv1, &drv2)?))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -252,8 +254,8 @@ impl DiffContext {
 
     fn diff_environment(
         &self,
-        env1: &BTreeMap<String, String>,
-        env2: &BTreeMap<String, String>,
+        env1: &BTreeMap<Vec<u8>, Vec<u8>>,
+        env2: &BTreeMap<Vec<u8>, Vec<u8>>,
     ) -> Option<EnvironmentDiff> {
         let mut diffs = BTreeMap::new();
 
@@ -262,7 +264,7 @@ impl DiffContext {
         for key in all_keys {
             match (env1.get(&key), env2.get(&key)) {
                 (Some(v1), Some(v2)) if v1 != v2 => {
-                    if let Some(diff) = self.diff_strings(v1, v2) {
+                    if let Some(diff) = self.diff_bytes(v1, v2) {
                         diffs.insert(key, Some(EnvVarDiff::Changed(diff)));
                     }
                 }
@@ -283,31 +285,31 @@ impl DiffContext {
         }
     }
 
-    fn diff_strings(&self, s1: &str, s2: &str) -> Option<StringDiff> {
+    fn diff_bytes(&self, s1: &[u8], s2: &[u8]) -> Option<StringDiff> {
         if s1 == s2 {
             None
         } else {
             Some(StringDiff::Changed {
-                old: s1.to_string(),
-                new: s2.to_string(),
+                old: s1.to_vec(),
+                new: s2.to_vec(),
             })
         }
     }
 
-    fn diff_optional_strings(
+    fn diff_optional_bytes(
         &self,
-        s1: &Option<String>,
-        s2: &Option<String>,
+        s1: &Option<Vec<u8>>,
+        s2: &Option<Vec<u8>>,
     ) -> Option<StringDiff> {
         match (s1, s2) {
-            (Some(a), Some(b)) => self.diff_strings(a, b),
+            (Some(a), Some(b)) => self.diff_bytes(a, b),
             (None, None) => None,
             (Some(a), None) => Some(StringDiff::Changed {
                 old: a.clone(),
-                new: String::new(),
+                new: Vec::new(),
             }),
             (None, Some(b)) => Some(StringDiff::Changed {
-                old: String::new(),
+                old: Vec::new(),
                 new: b.clone(),
             }),
         }
@@ -319,18 +321,15 @@ impl DiffContext {
             return TextDiff::Binary;
         }
 
-        let text1 = String::from_utf8_lossy(content1);
-        let text2 = String::from_utf8_lossy(content2);
-
         let diff = match self.orientation {
-            DiffOrientation::Line => SimilarTextDiff::from_lines(&text1, &text2),
-            DiffOrientation::Word => SimilarTextDiff::from_words(&text1, &text2),
-            DiffOrientation::Character => SimilarTextDiff::from_chars(&text1, &text2),
+            DiffOrientation::Line => SimilarTextDiff::from_lines(content1, content2),
+            DiffOrientation::Word => SimilarTextDiff::from_words(content1, content2),
+            DiffOrientation::Character => SimilarTextDiff::from_chars(content1, content2),
         };
 
         let mut lines = Vec::new();
         for change in diff.iter_all_changes() {
-            let line = change.value().to_string();
+            let line = change.value().to_vec();
             match change.tag() {
                 ChangeTag::Equal => lines.push(DiffLine::Context(line)),
                 ChangeTag::Insert => lines.push(DiffLine::Added(line)),
