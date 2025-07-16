@@ -120,7 +120,7 @@ fn load_derivation(input: &Path) -> Result<(Derivation, Vec<u8>)> {
         // Try as store path
         let path = parser::get_derivation_path(&input.to_string_lossy())?;
         let drv = parser::parse_derivation(&path)
-            .with_context(|| format!("Failed to parse derivation: {}", path))?;
+            .with_context(|| format!("Failed to parse derivation: {path}"))?;
         Ok((drv, path.into_bytes()))
     }
 }

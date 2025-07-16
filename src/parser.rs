@@ -6,7 +6,7 @@ use std::fs;
 
 pub fn parse_derivation(path: &str) -> Result<Derivation> {
     let content = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read derivation file: {}", path))?;
+        .with_context(|| format!("Failed to read derivation file: {path}"))?;
 
     parse_derivation_string(&content)
 }
@@ -345,10 +345,7 @@ pub fn get_derivation_path(store_path: &str) -> Result<String> {
         .arg(store_path)
         .output()
         .with_context(|| {
-            format!(
-                "Failed to run nix-store --query --deriver for path: {}",
-                store_path
-            )
+            format!("Failed to run nix-store --query --deriver for path: {store_path}")
         })?;
 
     if !output.status.success() {

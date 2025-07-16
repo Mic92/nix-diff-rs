@@ -215,13 +215,13 @@ impl DiffContext {
             };
 
             // Try to load and compare the derivations
-            let derivation_diff = if let Ok(path_str) = std::str::from_utf8(&path) {
+            let derivation_diff = if let Ok(path_str) = std::str::from_utf8(path) {
                 if let (Ok(drv1), Ok(drv2)) = (
                     crate::parser::parse_derivation(path_str),
                     crate::parser::parse_derivation(path_str),
                 ) {
                     if drv1 != drv2 {
-                        Some(Box::new(self.diff_derivations(&path, &path, &drv1, &drv2)?))
+                        Some(Box::new(self.diff_derivations(path, path, &drv1, &drv2)?))
                     } else {
                         None
                     }
