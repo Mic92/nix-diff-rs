@@ -270,6 +270,16 @@ impl<'a> Parser<'a> {
     }
 
     fn expect_char(&mut self, expected: char) -> Result<()> {
+        // Fast path: check current position without skipping whitespace first
+        if self.pos < self.bytes.len() {
+            let byte = self.bytes[self.pos];
+            if byte < 128 && byte as char == expected {
+                self.pos += 1;
+                return Ok(());
+            }
+        }
+
+        // Slow path: skip whitespace and check again
         self.skip_whitespace();
         match self.peek() {
             Some(ch) if ch == expected => {
