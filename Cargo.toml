@@ -12,20 +12,20 @@ name = "nix-diff"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0"
-similar = { version = "2.4", features = ["inline", "bytes", "text"] }
+anyhow = { version = "1.0", default-features = false, features = ["std"] }
+similar = { version = "2.7", features = ["bytes", "text"], default-features = false }
 atty = "0.2"
-tempfile = "3.8"
+tempfile = { version = "3.20", default-features = false }
 tinyjson = "2.5"
-memchr = "2.7"
+memchr = { version = "2.7", default-features = false, features = ["std"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6"
 
 [dev-dependencies]
-criterion = { version = "0.6", features = ["html_reports"] }
-tempfile = "3.8"
-insta = "1.34"
+criterion = { version = "0.6", default-features = false }
+tempfile = { version = "3.20", default-features = false }
+insta = { version = "1.43", default-features = false }
 
 [[bench]]
 name = "nixos_derivation"
