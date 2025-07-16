@@ -1,9 +1,8 @@
-use crate::types::{Derivation, Output, StorePath};
+use crate::types::{Derivation, Output};
 use anyhow::{anyhow, Context, Result};
 use memchr::{memchr, memchr2};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::{Path, PathBuf};
 
 pub fn parse_derivation(path: &str) -> Result<Derivation> {
     let content = fs::read_to_string(path)
@@ -52,8 +51,7 @@ impl<'a> Parser<'a> {
         self.expect_char(',')?;
 
         // Parse builder
-        let builder_path = self.parse_string()?;
-        let builder = StorePath::new(PathBuf::from(builder_path));
+        let builder = self.parse_string()?;
         self.expect_char(',')?;
 
         // Parse args
@@ -84,7 +82,7 @@ impl<'a> Parser<'a> {
             self.expect_char('(')?;
             let name = self.parse_string()?;
             self.expect_char(',')?;
-            let path = StorePath::new(PathBuf::from(self.parse_string()?));
+            let path = self.parse_string()?;
             self.expect_char(',')?;
             let hash_algorithm = self.parse_optional_string()?;
             self.expect_char(',')?;
@@ -109,13 +107,13 @@ impl<'a> Parser<'a> {
         Ok(outputs)
     }
 
-    fn parse_input_derivations(&mut self) -> Result<BTreeMap<StorePath, BTreeSet<String>>> {
+    fn parse_input_derivations(&mut self) -> Result<BTreeMap<String, BTreeSet<String>>> {
         self.expect_char('[')?;
         let mut inputs = BTreeMap::new();
 
         while self.peek() != Some(']') {
             self.expect_char('(')?;
-            let path = StorePath::new(PathBuf::from(self.parse_string()?));
+            let path = self.parse_string()?;
             self.expect_char(',')?;
             let outputs = self.parse_string_set()?;
             self.expect_char(')')?;
@@ -131,12 +129,9 @@ impl<'a> Parser<'a> {
         Ok(inputs)
     }
 
-    fn parse_input_sources(&mut self) -> Result<BTreeSet<StorePath>> {
+    fn parse_input_sources(&mut self) -> Result<BTreeSet<String>> {
         let paths = self.parse_string_list()?;
-        Ok(paths
-            .into_iter()
-            .map(|p| StorePath::new(PathBuf::from(p)))
-            .collect())
+        Ok(paths.into_iter().collect())
     }
 
     fn parse_environment(&mut self) -> Result<BTreeMap<String, String>> {
@@ -342,10 +337,10 @@ impl<'a> Parser<'a> {
     }
 }
 
-pub fn get_derivation_path(store_path: &Path) -> Result<PathBuf> {
+pub fn get_derivation_path(store_path: &str) -> Result<String> {
     // If it's already a .drv file, return it
-    if store_path.extension().and_then(|s| s.to_str()) == Some("drv") {
-        return Ok(store_path.to_path_buf());
+    if store_path.ends_with(".drv") {
+        return Ok(store_path.to_string());
     }
 
     // Otherwise, query the derivation
@@ -357,21 +352,21 @@ pub fn get_derivation_path(store_path: &Path) -> Result<PathBuf> {
         .with_context(|| {
             format!(
                 "Failed to run nix-store --query --deriver for path: {}",
-                store_path.display()
+                store_path
             )
         })?;
 
     if !output.status.success() {
         return Err(anyhow!(
             "Failed to query derivation for {}: {}",
-            store_path.display(),
+            store_path,
             String::from_utf8_lossy(&output.stderr)
         ));
     }
 
     let drv_path = String::from_utf8(output.stdout)?.trim().to_string();
 
-    Ok(PathBuf::from(drv_path))
+    Ok(drv_path)
 }
 
 #[cfg(test)]

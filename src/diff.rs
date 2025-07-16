@@ -3,7 +3,6 @@ use anyhow::Result;
 use similar::{ChangeTag, TextDiff as SimilarTextDiff};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
-use std::path::{Path, PathBuf};
 
 pub struct DiffContext {
     already_compared: HashSet<(String, String)>,
@@ -23,14 +22,14 @@ impl DiffContext {
 
     pub fn diff_derivations(
         &mut self,
-        path1: &Path,
-        path2: &Path,
+        path1: &str,
+        path2: &str,
         drv1: &Derivation,
         drv2: &Derivation,
     ) -> Result<DerivationDiff> {
         let key = (
-            path1.to_string_lossy().to_string(),
-            path2.to_string_lossy().to_string(),
+            path1.to_string(),
+            path2.to_string(),
         );
 
         if self.already_compared.contains(&key) {
@@ -51,7 +50,7 @@ impl DiffContext {
 
         let outputs = self.diff_outputs(&drv1.outputs, &drv2.outputs);
         let platform = self.diff_strings(&drv1.platform, &drv2.platform);
-        let builder = self.diff_strings(&drv1.builder.path_str, &drv2.builder.path_str);
+        let builder = self.diff_strings(&drv1.builder, &drv2.builder);
         let args = self.diff_arguments(&drv1.args, &drv2.args);
         let sources = self.diff_sources(&drv1.input_sources, &drv2.input_sources)?;
         let inputs = self.diff_inputs(&drv1.input_derivations, &drv2.input_derivations)?;
@@ -82,7 +81,7 @@ impl DiffContext {
         for name in all_names {
             match (outputs1.get(&name), outputs2.get(&name)) {
                 (Some(o1), Some(o2)) if o1 != o2 => {
-                    let path_diff = self.diff_strings(&o1.path.path_str, &o2.path.path_str);
+                    let path_diff = self.diff_strings(&o1.path, &o2.path);
                     let hash_algo_diff =
                         self.diff_optional_strings(&o1.hash_algorithm, &o2.hash_algorithm);
                     let hash_diff = self.diff_optional_strings(&o1.hash, &o2.hash);
@@ -150,8 +149,8 @@ impl DiffContext {
 
     fn diff_sources(
         &self,
-        sources1: &BTreeSet<StorePath>,
-        sources2: &BTreeSet<StorePath>,
+        sources1: &BTreeSet<String>,
+        sources2: &BTreeSet<String>,
     ) -> Result<Option<SourcesDiff>> {
         let added: Vec<_> = sources2.difference(sources1).cloned().collect();
         let removed: Vec<_> = sources1.difference(sources2).cloned().collect();
@@ -159,8 +158,8 @@ impl DiffContext {
 
         let mut common = Vec::new();
         for path in common_paths {
-            if let Ok(content1) = fs::read(&path.path_str) {
-                if let Ok(content2) = fs::read(&path.path_str) {
+            if let Ok(content1) = fs::read(&path) {
+                if let Ok(content2) = fs::read(&path) {
                     if content1 != content2 {
                         let diff = self.diff_file_contents(&content1, &content2);
                         common.push(SourceDiff {
@@ -185,8 +184,8 @@ impl DiffContext {
 
     fn diff_inputs(
         &mut self,
-        inputs1: &BTreeMap<StorePath, BTreeSet<String>>,
-        inputs2: &BTreeMap<StorePath, BTreeSet<String>>,
+        inputs1: &BTreeMap<String, BTreeSet<String>>,
+        inputs2: &BTreeMap<String, BTreeSet<String>>,
     ) -> Result<Option<InputsDiff>> {
         let keys1: BTreeSet<_> = inputs1.keys().cloned().collect();
         let keys2: BTreeSet<_> = inputs2.keys().cloned().collect();
@@ -217,13 +216,12 @@ impl DiffContext {
 
             // Try to load and compare the derivations
             let derivation_diff = if let (Ok(drv1), Ok(drv2)) = (
-                crate::parser::parse_derivation(&path.path_str),
-                crate::parser::parse_derivation(&path.path_str),
+                crate::parser::parse_derivation(&path),
+                crate::parser::parse_derivation(&path),
             ) {
                 if drv1 != drv2 {
-                    let path_buf = PathBuf::from(&path.path_str);
                     Some(Box::new(
-                        self.diff_derivations(&path_buf, &path_buf, &drv1, &drv2)?,
+                        self.diff_derivations(&path, &path, &drv1, &drv2)?,
                     ))
                 } else {
                     None

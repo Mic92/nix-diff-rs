@@ -1,33 +1,19 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct StorePath {
-    pub path_str: String,
-}
-
-impl StorePath {
-    pub fn new(path: PathBuf) -> Self {
-        StorePath {
-            path_str: path.to_string_lossy().into_owned(),
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Derivation {
     pub outputs: BTreeMap<String, Output>,
-    pub input_sources: BTreeSet<StorePath>,
-    pub input_derivations: BTreeMap<StorePath, BTreeSet<String>>,
+    pub input_sources: BTreeSet<String>,
+    pub input_derivations: BTreeMap<String, BTreeSet<String>>,
     pub platform: String,
-    pub builder: StorePath,
+    pub builder: String,
     pub args: Vec<String>,
     pub env: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Output {
-    pub path: StorePath,
+    pub path: String,
     pub hash_algorithm: Option<String>,
     pub hash: Option<String>,
 }
@@ -82,15 +68,15 @@ pub enum ArgumentsDiff {
 pub enum SourcesDiff {
     Identical,
     Changed {
-        added: Vec<StorePath>,
-        removed: Vec<StorePath>,
+        added: Vec<String>,
+        removed: Vec<String>,
         common: Vec<SourceDiff>,
     },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SourceDiff {
-    pub path: StorePath,
+    pub path: String,
     pub diff: TextDiff,
 }
 
@@ -98,15 +84,15 @@ pub struct SourceDiff {
 pub enum InputsDiff {
     Identical,
     Changed {
-        added: Vec<StorePath>,
-        removed: Vec<StorePath>,
+        added: Vec<String>,
+        removed: Vec<String>,
         changed: Vec<InputDiff>,
     },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct InputDiff {
-    pub path: StorePath,
+    pub path: String,
     pub outputs: Option<OutputSetDiff>,
     pub derivation: Option<Box<DerivationDiff>>,
 }

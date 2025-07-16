@@ -122,7 +122,7 @@ impl Renderer {
                     output,
                     "{}+ Added: {}{}",
                     self.green(),
-                    out.path.path_str,
+                    out.path,
                     self.reset()
                 );
             }
@@ -132,7 +132,7 @@ impl Renderer {
                     output,
                     "{}- Removed: {}{}",
                     self.red(),
-                    out.path.path_str,
+                    out.path,
                     self.reset()
                 );
             }
@@ -185,7 +185,7 @@ impl Renderer {
 
                 for path in removed {
                     self.write_indent(output, indent + 2);
-                    let _ = writeln!(output, "{}- {}{}", self.red(), path.path_str, self.reset());
+                    let _ = writeln!(output, "{}- {}{}", self.red(), path, self.reset());
                 }
 
                 for path in added {
@@ -194,7 +194,7 @@ impl Renderer {
                         output,
                         "{}+ {}{}",
                         self.green(),
-                        path.path_str,
+                        path,
                         self.reset()
                     );
                 }
@@ -205,7 +205,7 @@ impl Renderer {
                         output,
                         "{}~ {}{}",
                         self.yellow(),
-                        src_diff.path.path_str,
+                        src_diff.path,
                         self.reset()
                     );
                     self.format_text_diff(output, &src_diff.diff, indent + 4);
@@ -226,7 +226,7 @@ impl Renderer {
 
                 for path in removed {
                     self.write_indent(output, indent + 2);
-                    let _ = writeln!(output, "{}- {}{}", self.red(), path.path_str, self.reset());
+                    let _ = writeln!(output, "{}- {}{}", self.red(), path, self.reset());
                 }
 
                 for path in added {
@@ -235,7 +235,7 @@ impl Renderer {
                         output,
                         "{}+ {}{}",
                         self.green(),
-                        path.path_str,
+                        path,
                         self.reset()
                     );
                 }
@@ -246,7 +246,7 @@ impl Renderer {
                         output,
                         "{}~ {}{}",
                         self.yellow(),
-                        inp_diff.path.path_str,
+                        inp_diff.path,
                         self.reset()
                     );
 
