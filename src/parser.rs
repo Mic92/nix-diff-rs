@@ -1,5 +1,5 @@
 use crate::types::{Derivation, Output};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use memchr::{memchr, memchr2};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

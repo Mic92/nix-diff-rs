@@ -1,13 +1,12 @@
 ---
 source: tests/snapshot_test.rs
-assertion_line: 104
-expression: stdout
+expression: normalized
 ---
 Outputs:
   Output 'out':
     Path:
-      - /nix/store/k40bcpw9yrc3cvdr14461m6zs4b2zh7r-hello-v1
-      + /nix/store/2apzjc8km4jy9rr055slz7r2bk4s5b11-hello-v2
+      - /nix/store/HASH-hello-v1
+      + /nix/store/HASH-hello-v2
 Arguments:
   Argument 0:
           mkdir -p $out/bin
@@ -18,17 +17,17 @@ Arguments:
     + echo "Now with more features!"
       EOF
           chmod +x $out/bin/hello
-          
+      
           # Reference dependencies
-    -     ln -s /nix/store/zxnf0w2zsjlmyvy503x20dkx9gapfgf3-dep1/bin/dep1 $out/bin/
-    -     ln -s /nix/store/cd5mi809khf7wgwij55fj6797vg4zdrb-dep2/share $out/
-    +     ln -s /nix/store/pppj168197266j0v77p4sam08g4pgj2p-dep1/bin/dep1 $out/bin/
-    +     ln -s /nix/store/ykzvdbr4369678d6nb2kcnzn2bwpsb64-dep2/share $out/
+    -     ln -s /nix/store/HASH-dep1/bin/dep1 $out/bin/
+    -     ln -s /nix/store/HASH-dep2/share $out/
+    +     ln -s /nix/store/HASH-dep1/bin/dep1 $out/bin/
+    +     ln -s /nix/store/HASH-dep2/share $out/
 Input derivations:
-  - /nix/store/c7ddcxqvcx8vkfqhwqp4vpdj34nr9bll-dep2.drv
-  - /nix/store/yg45f58h74lj007n8nyl6v17v0sb2z4i-dep1.drv
-  + /nix/store/k886l86g6n3q1cgl5sw1apav22hlsaax-dep1.drv
-  + /nix/store/wpqqrnhn872z6vj1r8jbga98yf5c1kjg-dep2.drv
+  - /nix/store/HASH-dep1.drv
+  - /nix/store/HASH-dep2.drv
+  + /nix/store/HASH-dep1.drv
+  + /nix/store/HASH-dep2.drv
 Environment:
   description:
     - A simple hello world program v1
@@ -39,8 +38,8 @@ Environment:
   newFeature:
     + true
   out:
-    - /nix/store/k40bcpw9yrc3cvdr14461m6zs4b2zh7r-hello-v1
-    + /nix/store/2apzjc8km4jy9rr055slz7r2bk4s5b11-hello-v2
+    - /nix/store/HASH-hello-v1
+    + /nix/store/HASH-hello-v2
   version:
     - 1.0
     + 2.0

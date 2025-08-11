@@ -225,7 +225,7 @@ impl Renderer {
             self.write_indent(output, indent + 2);
             output.extend_from_slice(self.red());
             output.extend_from_slice(b"- ");
-            output.extend_from_slice(path);
+            output.extend_from_slice(&path.0);
             output.extend_from_slice(self.reset());
             output.push(b'\n');
         }
@@ -234,7 +234,7 @@ impl Renderer {
             self.write_indent(output, indent + 2);
             output.extend_from_slice(self.green());
             output.extend_from_slice(b"+ ");
-            output.extend_from_slice(path);
+            output.extend_from_slice(&path.0);
             output.extend_from_slice(self.reset());
             output.push(b'\n');
         }
@@ -380,39 +380,19 @@ impl Renderer {
     }
 
     fn red(&self) -> &[u8] {
-        if self.should_use_color() {
-            RED
-        } else {
-            b""
-        }
+        if self.should_use_color() { RED } else { b"" }
     }
     fn green(&self) -> &[u8] {
-        if self.should_use_color() {
-            GREEN
-        } else {
-            b""
-        }
+        if self.should_use_color() { GREEN } else { b"" }
     }
     fn yellow(&self) -> &[u8] {
-        if self.should_use_color() {
-            YELLOW
-        } else {
-            b""
-        }
+        if self.should_use_color() { YELLOW } else { b"" }
     }
     fn bold(&self) -> &[u8] {
-        if self.should_use_color() {
-            BOLD
-        } else {
-            b""
-        }
+        if self.should_use_color() { BOLD } else { b"" }
     }
     fn reset(&self) -> &[u8] {
-        if self.should_use_color() {
-            RESET
-        } else {
-            b""
-        }
+        if self.should_use_color() { RESET } else { b"" }
     }
 
     fn create_text_diff(&self, old: &[u8], new: &[u8]) -> TextDiff {

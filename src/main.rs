@@ -4,7 +4,7 @@ mod parser;
 mod render;
 mod types;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::env;
 use std::path::{Path, PathBuf};
 use types::{ColorMode, Derivation, DiffOrientation};
@@ -71,6 +71,10 @@ fn main() -> Result<()> {
         eprintln!("Error: Expected exactly 2 derivation paths");
         eprintln!();
         print_help();
+        std::process::exit(1);
+    }
+    if paths[0].as_os_str().is_empty() || paths[1].as_os_str().is_empty() {
+        eprintln!("Error: Derivation paths cannot be empty");
         std::process::exit(1);
     }
 

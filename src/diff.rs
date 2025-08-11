@@ -137,11 +137,7 @@ impl DiffContext {
             }
         }
 
-        if diffs.is_empty() {
-            None
-        } else {
-            Some(diffs)
-        }
+        if diffs.is_empty() { None } else { Some(diffs) }
     }
 
     fn diff_sources(
@@ -149,8 +145,8 @@ impl DiffContext {
         sources1: &BTreeSet<Vec<u8>>,
         sources2: &BTreeSet<Vec<u8>>,
     ) -> Result<Option<SourcesDiff>> {
-        let added: Vec<_> = sources2.difference(sources1).cloned().collect();
-        let removed: Vec<_> = sources1.difference(sources2).cloned().collect();
+        let added: BTreeSet<_> = sources2.difference(sources1).cloned().collect();
+        let removed: BTreeSet<_> = sources1.difference(sources2).cloned().collect();
         let common_paths: Vec<_> = sources1.intersection(sources2).cloned().collect();
 
         let mut common = Vec::new();
@@ -190,8 +186,14 @@ impl DiffContext {
         let keys1: BTreeSet<_> = inputs1.keys().cloned().collect();
         let keys2: BTreeSet<_> = inputs2.keys().cloned().collect();
 
-        let added: Vec<_> = keys2.difference(&keys1).cloned().collect();
-        let removed: Vec<_> = keys1.difference(&keys2).cloned().collect();
+        let added: BTreeSet<DerivationPath> = keys2
+            .difference(&keys1)
+            .map(|k| DerivationPath(k.clone()))
+            .collect();
+        let removed: BTreeSet<DerivationPath> = keys1
+            .difference(&keys2)
+            .map(|k| DerivationPath(k.clone()))
+            .collect();
 
         let mut changed = Vec::new();
         for path in keys1.intersection(&keys2) {
@@ -278,11 +280,7 @@ impl DiffContext {
             }
         }
 
-        if diffs.is_empty() {
-            None
-        } else {
-            Some(diffs)
-        }
+        if diffs.is_empty() { None } else { Some(diffs) }
     }
 
     fn diff_bytes(&self, s1: &[u8], s2: &[u8]) -> Option<StringDiff> {
