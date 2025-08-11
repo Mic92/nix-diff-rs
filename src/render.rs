@@ -274,7 +274,14 @@ impl Renderer {
                 extend!(output, self.red(), b"- ", value, self.reset(), b"\n");
             }
             EnvVarDiff::Changed(str_diff) => {
-                self.format_string_diff(output, str_diff, indent);
+                let StringDiff { old, new } = str_diff;
+                // For multi-line environment variables, show them as a text diff
+                if old.contains(&b'\n') || new.contains(&b'\n') {
+                    let text_diff = self.create_text_diff(old, new);
+                    self.format_text_diff(output, &text_diff, indent);
+                } else {
+                    self.format_string_diff(output, str_diff, indent);
+                }
             }
         }
     }

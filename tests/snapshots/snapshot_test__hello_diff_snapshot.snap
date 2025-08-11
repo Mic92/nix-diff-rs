@@ -29,6 +29,17 @@ Input derivations:
   + /nix/store/HASH-dep1.drv
   + /nix/store/HASH-dep2.drv
 Environment:
+  buildScript:
+      echo "Starting build process..."
+      echo "Configuring environment"
+    + echo "Setting up new features"
+      echo "Building dependencies"
+    - echo "Compiling sources"
+    - echo "Running tests"
+    + echo "Compiling sources with optimizations"
+    + echo "Running extended test suite"
+    + echo "Generating documentation"
+      echo "Build complete!"
   description:
     - A simple hello world program v1
     + A simple hello world program v2 with improvements

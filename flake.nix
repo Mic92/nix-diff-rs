@@ -51,6 +51,7 @@
             clippy
             cargo-watch
             cargo-criterion
+            cargo-insta
           ];
         };
 

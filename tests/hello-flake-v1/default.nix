@@ -37,4 +37,12 @@ in
     version = "1.0";
     description = "A simple hello world program v1";
     license = "MIT";
+    buildScript = ''
+      echo "Starting build process..."
+      echo "Configuring environment"
+      echo "Building dependencies"
+      echo "Compiling sources"
+      echo "Running tests"
+      echo "Build complete!"
+    '';
   }
