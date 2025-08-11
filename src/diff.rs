@@ -1,7 +1,7 @@
 use crate::types::*;
 use anyhow::Result;
 use similar::{ChangeTag, TextDiff as SimilarTextDiff};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 
 pub struct DiffContext {
@@ -183,63 +183,131 @@ impl DiffContext {
         inputs1: &BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>>,
         inputs2: &BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>>,
     ) -> Result<Option<InputsDiff>> {
-        let keys1: BTreeSet<_> = inputs1.keys().cloned().collect();
-        let keys2: BTreeSet<_> = inputs2.keys().cloned().collect();
+        // Extract derivation name from a path like /nix/store/hash-name.drv -> name.drv
+        fn get_derivation_name(path: &[u8]) -> &[u8] {
+            if let Some(last_slash) = path.iter().rposition(|&b| b == b'/') {
+                let filename = &path[last_slash + 1..];
+                if let Some(dash_pos) = filename.iter().position(|&b| b == b'-') {
+                    return &filename[dash_pos + 1..];
+                }
+            }
+            path
+        }
 
-        let added: BTreeSet<DerivationPath> = keys2
-            .difference(&keys1)
-            .map(|k| DerivationPath(k.clone()))
-            .collect();
-        let removed: BTreeSet<DerivationPath> = keys1
-            .difference(&keys2)
-            .map(|k| DerivationPath(k.clone()))
+        // Build maps from derivation name to path for both sets
+        let mut names_to_paths1: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+        let mut names_to_paths2: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+
+        for path in inputs1.keys() {
+            let name = get_derivation_name(path).to_vec();
+            names_to_paths1.insert(name, path.clone());
+        }
+
+        for path in inputs2.keys() {
+            let name = get_derivation_name(path).to_vec();
+            names_to_paths2.insert(name, path.clone());
+        }
+
+        let all_names: BTreeSet<Vec<u8>> = names_to_paths1
+            .keys()
+            .chain(names_to_paths2.keys())
+            .cloned()
             .collect();
 
+        let mut added = BTreeSet::new();
+        let mut removed = BTreeSet::new();
         let mut changed = Vec::new();
-        for path in keys1.intersection(&keys2) {
-            let outputs1 = &inputs1[path];
-            let outputs2 = &inputs2[path];
 
-            let outputs_diff = if outputs1 != outputs2 {
-                let added_outputs: BTreeSet<_> = outputs2.difference(outputs1).cloned().collect();
-                let removed_outputs: BTreeSet<_> = outputs1.difference(outputs2).cloned().collect();
+        for name in all_names {
+            match (names_to_paths1.get(&name), names_to_paths2.get(&name)) {
+                (Some(path1), Some(path2)) => {
+                    // Both have this dependency - check if they differ
+                    if path1 != path2 {
+                        // The paths are different, so the derivations have changed
+                        let outputs1 = &inputs1[path1];
+                        let outputs2 = &inputs2[path2];
 
-                if !added_outputs.is_empty() || !removed_outputs.is_empty() {
-                    Some(OutputSetDiff {
-                        added: added_outputs,
-                        removed: removed_outputs,
-                    })
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+                        let outputs_diff = if outputs1 != outputs2 {
+                            let added_outputs: BTreeSet<_> =
+                                outputs2.difference(outputs1).cloned().collect();
+                            let removed_outputs: BTreeSet<_> =
+                                outputs1.difference(outputs2).cloned().collect();
 
-            // Try to load and compare the derivations
-            let derivation_diff = if let Ok(path_str) = std::str::from_utf8(path) {
-                if let (Ok(drv1), Ok(drv2)) = (
-                    crate::parser::parse_derivation(path_str),
-                    crate::parser::parse_derivation(path_str),
-                ) {
-                    if drv1 != drv2 {
-                        Some(Box::new(self.diff_derivations(path, path, &drv1, &drv2)?))
+                            if !added_outputs.is_empty() || !removed_outputs.is_empty() {
+                                Some(OutputSetDiff {
+                                    added: added_outputs,
+                                    removed: removed_outputs,
+                                })
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        // Try to load and compare the derivations
+                        let derivation_diff = if let (Ok(path1_str), Ok(path2_str)) =
+                            (std::str::from_utf8(path1), std::str::from_utf8(path2))
+                        {
+                            if let (Ok(drv1), Ok(drv2)) = (
+                                crate::parser::parse_derivation(path1_str),
+                                crate::parser::parse_derivation(path2_str),
+                            ) {
+                                Some(Box::new(self.diff_derivations(path1, path2, &drv1, &drv2)?))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        // Store the name for display, not the path
+                        changed.push(InputDiff {
+                            path: name.clone(),
+                            outputs: outputs_diff,
+                            derivation: derivation_diff,
+                        });
                     } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+                        // Same path - check if outputs differ
+                        let outputs1 = &inputs1[path1];
+                        let outputs2 = &inputs2[path2];
 
-            if outputs_diff.is_some() || derivation_diff.is_some() {
-                changed.push(InputDiff {
-                    path: path.clone(),
-                    outputs: outputs_diff,
-                    derivation: derivation_diff,
-                });
+                        let outputs_diff = if outputs1 != outputs2 {
+                            let added_outputs: BTreeSet<_> =
+                                outputs2.difference(outputs1).cloned().collect();
+                            let removed_outputs: BTreeSet<_> =
+                                outputs1.difference(outputs2).cloned().collect();
+
+                            if !added_outputs.is_empty() || !removed_outputs.is_empty() {
+                                Some(OutputSetDiff {
+                                    added: added_outputs,
+                                    removed: removed_outputs,
+                                })
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        if outputs_diff.is_some() {
+                            changed.push(InputDiff {
+                                path: name.clone(),
+                                outputs: outputs_diff,
+                                derivation: None,
+                            });
+                        }
+                    }
+                }
+                (Some(path1), None) => {
+                    // Only in inputs1 - removed
+                    removed.insert(DerivationPath(path1.clone()));
+                }
+                (None, Some(path2)) => {
+                    // Only in inputs2 - added
+                    added.insert(DerivationPath(path2.clone()));
+                }
+                (None, None) => unreachable!(),
             }
         }
 

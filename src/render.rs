@@ -215,38 +215,43 @@ impl Renderer {
             removed,
             changed,
         } = diff;
-        self.write_section(output, b"Input derivations", indent);
 
-        for path in removed {
-            self.write_indent(output, indent + 2);
-            extend!(output, self.red(), b"- ", &path.0, self.reset(), b"\n");
+        // Only show section header if there are simple additions/removals
+        if !added.is_empty() || !removed.is_empty() {
+            self.write_section(output, b"Input derivations", indent);
+
+            for path in removed {
+                self.write_indent(output, indent + 2);
+                extend!(output, self.red(), b"- ", &path.0, self.reset(), b"\n");
+            }
+
+            for path in added {
+                self.write_indent(output, indent + 2);
+                extend!(output, self.green(), b"+ ", &path.0, self.reset(), b"\n");
+            }
         }
 
-        for path in added {
-            self.write_indent(output, indent + 2);
-            extend!(output, self.green(), b"+ ", &path.0, self.reset(), b"\n");
-        }
-
+        // Show changed derivations with "The input derivation named X differs" format
         for inp_diff in changed {
-            self.write_indent(output, indent + 2);
+            self.write_indent(output, indent);
             extend!(
                 output,
-                self.yellow(),
-                b"~ ",
+                self.bold(),
+                b"The input derivation named `",
                 &inp_diff.path,
+                b"` differs",
                 self.reset(),
                 b"\n"
             );
 
-            if let Some(out_diff) = &inp_diff.outputs {
-                self.write_indent(output, indent + 4);
-                extend!(output, b"Output changes:\n");
-                self.format_output_set_diff(output, out_diff, indent + 6);
-            }
-
             if let Some(drv_diff) = &inp_diff.derivation {
-                let sub_output = self.format_derivation_diff(drv_diff, indent + 4);
+                let sub_output = self.format_derivation_diff(drv_diff, indent + 2);
                 extend!(output, &sub_output);
+            } else if let Some(out_diff) = &inp_diff.outputs {
+                // Only outputs differ, not the derivation itself
+                self.write_indent(output, indent + 2);
+                extend!(output, b"Output changes:\n");
+                self.format_output_set_diff(output, out_diff, indent + 4);
             }
         }
     }
@@ -274,7 +279,14 @@ impl Renderer {
                 extend!(output, self.red(), b"- ", value, self.reset(), b"\n");
             }
             EnvVarDiff::Changed(str_diff) => {
-                self.format_string_diff(output, str_diff, indent);
+                let StringDiff { old, new } = str_diff;
+                // For multi-line environment variables, show them as a text diff
+                if old.contains(&b'\n') || new.contains(&b'\n') {
+                    let text_diff = self.create_text_diff(old, new);
+                    self.format_text_diff(output, &text_diff, indent);
+                } else {
+                    self.format_string_diff(output, str_diff, indent);
+                }
             }
         }
     }
@@ -301,18 +313,30 @@ impl Renderer {
                             if in_change_block || context_count < self.context_lines {
                                 self.write_indent(output, indent);
                                 extend!(output, b"  ", text);
+                                // Add newline if the text doesn't already end with one
+                                if !text.ends_with(b"\n") {
+                                    output.push(b'\n');
+                                }
                                 context_count += 1;
                             }
                         }
                         DiffLine::Added(text) => {
                             self.write_indent(output, indent);
                             extend!(output, self.green(), b"+ ", text, self.reset());
+                            // Add newline if the text doesn't already end with one
+                            if !text.ends_with(b"\n") {
+                                output.push(b'\n');
+                            }
                             in_change_block = true;
                             context_count = 0;
                         }
                         DiffLine::Removed(text) => {
                             self.write_indent(output, indent);
                             extend!(output, self.red(), b"- ", text, self.reset());
+                            // Add newline if the text doesn't already end with one
+                            if !text.ends_with(b"\n") {
+                                output.push(b'\n');
+                            }
                             in_change_block = true;
                             context_count = 0;
                         }

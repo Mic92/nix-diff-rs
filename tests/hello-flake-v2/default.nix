@@ -39,4 +39,14 @@ in
     description = "A simple hello world program v2 with improvements";
     license = "MIT";
     newFeature = "true";
+    buildScript = ''
+      echo "Starting build process..."
+      echo "Configuring environment"
+      echo "Setting up new features"
+      echo "Building dependencies"
+      echo "Compiling sources with optimizations"
+      echo "Running extended test suite"
+      echo "Generating documentation"
+      echo "Build complete!"
+    '';
   }

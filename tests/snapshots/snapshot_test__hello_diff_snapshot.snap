@@ -23,12 +23,47 @@ Arguments:
     -     ln -s /nix/store/HASH-dep2/share $out/
     +     ln -s /nix/store/HASH-dep1/bin/dep1 $out/bin/
     +     ln -s /nix/store/HASH-dep2/share $out/
-Input derivations:
-  - /nix/store/HASH-dep1.drv
-  - /nix/store/HASH-dep2.drv
-  + /nix/store/HASH-dep1.drv
-  + /nix/store/HASH-dep2.drv
+The input derivation named `dep1.drv` differs
+  Outputs:
+    Output 'out':
+      Path:
+        - /nix/store/HASH-dep1
+        + /nix/store/HASH-dep1
+  Arguments:
+    Argument 0:
+        mkdir -p $out/bin && echo '#!/bin/sh
+      - echo Dependency 1' > $out/bin/dep1 && chmod +x $out/bin/dep1
+      + echo Dependency 1 updated' > $out/bin/dep1 && chmod +x $out/bin/dep1
+  Environment:
+    out:
+      - /nix/store/HASH-dep1
+      + /nix/store/HASH-dep1
+The input derivation named `dep2.drv` differs
+  Outputs:
+    Output 'out':
+      Path:
+        - /nix/store/HASH-dep2
+        + /nix/store/HASH-dep2
+  Arguments:
+    Argument 0:
+      - mkdir -p $out/share && echo 'Shared data v1' > $out/share/data.txt
+      + mkdir -p $out/share && echo 'Shared data v2' > $out/share/data.txt
+  Environment:
+    out:
+      - /nix/store/HASH-dep2
+      + /nix/store/HASH-dep2
 Environment:
+  buildScript:
+      echo "Starting build process..."
+      echo "Configuring environment"
+    + echo "Setting up new features"
+      echo "Building dependencies"
+    - echo "Compiling sources"
+    - echo "Running tests"
+    + echo "Compiling sources with optimizations"
+    + echo "Running extended test suite"
+    + echo "Generating documentation"
+      echo "Build complete!"
   description:
     - A simple hello world program v1
     + A simple hello world program v2 with improvements
