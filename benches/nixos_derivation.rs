@@ -6,7 +6,7 @@ use tikv_jemallocator::Jemalloc;
 static GLOBAL: Jemalloc = Jemalloc;
 
 use anyhow::Context;
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use nix_diff::{diff::DiffContext, parser, types::DiffOrientation};
 use std::hint::black_box;
 use std::process::Command;

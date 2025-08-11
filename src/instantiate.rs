@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -95,6 +95,7 @@ fn instantiate_file(file_path: &str, gcroot_path: &Path) -> Result<String> {
 
 /// Common function to instantiate and process nix-instantiate output
 fn run_nix_instantiate(mut cmd: Command, gcroot_path: &Path) -> Result<String> {
+    cmd.args(["--extra-experimental-features", "nix-command flakes"]);
     cmd.args(["--add-root", &gcroot_path.to_string_lossy(), "--indirect"]);
     let output = cmd.output().context("Failed to run nix-instantiate")?;
 

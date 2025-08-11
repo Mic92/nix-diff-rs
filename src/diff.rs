@@ -137,11 +137,7 @@ impl DiffContext {
             }
         }
 
-        if diffs.is_empty() {
-            None
-        } else {
-            Some(diffs)
-        }
+        if diffs.is_empty() { None } else { Some(diffs) }
     }
 
     fn diff_sources(
@@ -278,11 +274,7 @@ impl DiffContext {
             }
         }
 
-        if diffs.is_empty() {
-            None
-        } else {
-            Some(diffs)
-        }
+        if diffs.is_empty() { None } else { Some(diffs) }
     }
 
     fn diff_bytes(&self, s1: &[u8], s2: &[u8]) -> Option<StringDiff> {

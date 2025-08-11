@@ -4,7 +4,7 @@ mod parser;
 mod render;
 mod types;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use std::env;
 use std::path::{Path, PathBuf};
 use types::{ColorMode, Derivation, DiffOrientation};

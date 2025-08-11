@@ -380,39 +380,19 @@ impl Renderer {
     }
 
     fn red(&self) -> &[u8] {
-        if self.should_use_color() {
-            RED
-        } else {
-            b""
-        }
+        if self.should_use_color() { RED } else { b"" }
     }
     fn green(&self) -> &[u8] {
-        if self.should_use_color() {
-            GREEN
-        } else {
-            b""
-        }
+        if self.should_use_color() { GREEN } else { b"" }
     }
     fn yellow(&self) -> &[u8] {
-        if self.should_use_color() {
-            YELLOW
-        } else {
-            b""
-        }
+        if self.should_use_color() { YELLOW } else { b"" }
     }
     fn bold(&self) -> &[u8] {
-        if self.should_use_color() {
-            BOLD
-        } else {
-            b""
-        }
+        if self.should_use_color() { BOLD } else { b"" }
     }
     fn reset(&self) -> &[u8] {
-        if self.should_use_color() {
-            RESET
-        } else {
-            b""
-        }
+        if self.should_use_color() { RESET } else { b"" }
     }
 
     fn create_text_diff(&self, old: &[u8], new: &[u8]) -> TextDiff {
