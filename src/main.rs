@@ -73,6 +73,10 @@ fn main() -> Result<()> {
         print_help();
         std::process::exit(1);
     }
+    if paths[0].as_os_str().is_empty() || paths[1].as_os_str().is_empty() {
+        eprintln!("Error: Derivation paths cannot be empty");
+        std::process::exit(1);
+    }
 
     let (drv1, path1) = load_derivation(&paths[0])?;
     let (drv2, path2) = load_derivation(&paths[1])?;
