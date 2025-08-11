@@ -225,7 +225,7 @@ impl Renderer {
             self.write_indent(output, indent + 2);
             output.extend_from_slice(self.red());
             output.extend_from_slice(b"- ");
-            output.extend_from_slice(path);
+            output.extend_from_slice(&path.0);
             output.extend_from_slice(self.reset());
             output.push(b'\n');
         }
@@ -234,7 +234,7 @@ impl Renderer {
             self.write_indent(output, indent + 2);
             output.extend_from_slice(self.green());
             output.extend_from_slice(b"+ ");
-            output.extend_from_slice(path);
+            output.extend_from_slice(&path.0);
             output.extend_from_slice(self.reset());
             output.push(b'\n');
         }
