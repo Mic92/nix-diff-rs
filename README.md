@@ -17,7 +17,7 @@ A Rust port of [nix-diff](https://github.com/Gabriel439/nix-diff), a tool to exp
 ## Installation
 
 ```bash
-nix build
+nix run github:Mic92/nix-diff-rs
 ```
 
 ## Usage
