@@ -265,7 +265,7 @@ impl<'a> Parser<'a> {
             self.pos += expected.len();
             Ok(())
         } else {
-            Err(anyhow!("Expected '{}' at position {}", expected, self.pos))
+            Err(anyhow!("Expected '{expected}' at position {}", self.pos))
         }
     }
 
