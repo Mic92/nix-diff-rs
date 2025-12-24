@@ -265,7 +265,7 @@ impl<'a> Parser<'a> {
             self.pos += expected.len();
             Ok(())
         } else {
-            Err(anyhow!("Expected '{}' at position {}", expected, self.pos))
+            Err(anyhow!("Expected '{expected}' at position {}", self.pos))
         }
     }
 
@@ -292,7 +292,7 @@ impl<'a> Parser<'a> {
                 ch,
                 self.pos
             )),
-            None => Err(anyhow!("Expected '{}' but reached end of input", expected)),
+            None => Err(anyhow!("Expected '{expected}' but reached end of input")),
         }
     }
 

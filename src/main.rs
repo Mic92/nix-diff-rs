@@ -59,7 +59,7 @@ fn main() -> Result<()> {
             }
             arg => {
                 if arg.starts_with('-') {
-                    return Err(anyhow!("Unknown option: {}", arg));
+                    return Err(anyhow!("Unknown option: {arg}"));
                 }
                 paths.push(PathBuf::from(arg));
             }
