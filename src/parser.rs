@@ -292,7 +292,7 @@ impl<'a> Parser<'a> {
                 ch,
                 self.pos
             )),
-            None => Err(anyhow!("Expected '{}' but reached end of input", expected)),
+            None => Err(anyhow!("Expected '{expected}' but reached end of input")),
         }
     }
 

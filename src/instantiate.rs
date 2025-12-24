@@ -119,7 +119,7 @@ fn run_nix_instantiate(mut cmd: Command, gcroot_path: &Path) -> Result<String> {
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("drv"))
     {
-        bail!("nix-instantiate did not return a .drv file: {}", drv_path);
+        bail!("nix-instantiate did not return a .drv file: {drv_path}");
     }
 
     Ok(drv_path)
