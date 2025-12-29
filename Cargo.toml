@@ -14,7 +14,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = { version = "1.0", default-features = false, features = ["std"] }
 similar = { version = "2.7", features = ["bytes", "text"], default-features = false }
-tempfile = { version = "3.23", default-features = false }
+tempfile = { version = "3.24", default-features = false }
 tinyjson = "2.5"
 memchr = { version = "2.7", default-features = false, features = ["std"] }
 
@@ -23,7 +23,7 @@ tikv-jemallocator = "0.6"
 
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false }
-tempfile = { version = "3.23", default-features = false }
+tempfile = { version = "3.24", default-features = false }
 insta = { version = "1.45", default-features = false }
 regex = "1.12"
 
