@@ -1,10 +1,5 @@
-mod diff;
-mod instantiate;
-mod parser;
-mod render;
-mod types;
-
 use anyhow::{Context, Result, anyhow};
+use nix_diff::{diff, instantiate, parser, render, types};
 use std::env;
 use std::path::{Path, PathBuf};
 use types::{ColorMode, Derivation, DiffOrientation};

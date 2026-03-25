@@ -2,6 +2,7 @@
   lib,
   rustPlatform,
   clippy,
+  rust-jemalloc-sys,
   nix,
   enableClippy ? false,
   enableChecks ? false,
@@ -10,15 +11,20 @@ rustPlatform.buildRustPackage {
   pname = "nix-diff";
   version = "0.1.0";
   src = ./.;
-  cargoLock.lockFile = ./Cargo.lock;
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+    outputHashes = {
+      "harmonia-store-aterm-0.0.0-alpha.0" = "sha256-FDL2xxAFOYw21VhGYake2fFC9S7jK5kBSM4OfU12VmQ=";
+    };
+  };
 
   NIX_CFLAGS_COMPILE = "-Wno-error";
 
-  nativeBuildInputs =
-    lib.optional enableClippy clippy
-    ++ lib.optional enableChecks nix;
+  buildInputs = [ rust-jemalloc-sys ];
 
-  nativeCheckInputs = [nix];
+  nativeBuildInputs = lib.optional enableClippy clippy ++ lib.optional enableChecks nix;
+
+  nativeCheckInputs = [ nix ];
 
   doCheck = false;
 
@@ -39,7 +45,7 @@ rustPlatform.buildRustPackage {
     description = "Explain why two Nix derivations differ";
     homepage = "https://github.com/nix-community/nix-diff-rs";
     license = licenses.bsd3;
-    maintainers = with maintainers; [];
+    maintainers = with maintainers; [ ];
     mainProgram = "nix-diff";
   };
 }
