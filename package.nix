@@ -14,11 +14,9 @@ rustPlatform.buildRustPackage {
 
   NIX_CFLAGS_COMPILE = "-Wno-error";
 
-  nativeBuildInputs =
-    lib.optional enableClippy clippy
-    ++ lib.optional enableChecks nix;
+  nativeBuildInputs = lib.optional enableClippy clippy ++ lib.optional enableChecks nix;
 
-  nativeCheckInputs = [nix];
+  nativeCheckInputs = [ nix ];
 
   doCheck = false;
 
@@ -39,7 +37,7 @@ rustPlatform.buildRustPackage {
     description = "Explain why two Nix derivations differ";
     homepage = "https://github.com/nix-community/nix-diff-rs";
     license = licenses.bsd3;
-    maintainers = with maintainers; [];
+    maintainers = with maintainers; [ ];
     mainProgram = "nix-diff";
   };
 }
