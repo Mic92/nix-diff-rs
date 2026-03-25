@@ -11,7 +11,12 @@ rustPlatform.buildRustPackage {
   pname = "nix-diff";
   version = "0.1.0";
   src = ./.;
-  cargoLock.lockFile = ./Cargo.lock;
+  cargoLock = {
+    lockFile = ./Cargo.lock;
+    outputHashes = {
+      "harmonia-store-aterm-0.0.0-alpha.0" = "sha256-FDL2xxAFOYw21VhGYake2fFC9S7jK5kBSM4OfU12VmQ=";
+    };
+  };
 
   NIX_CFLAGS_COMPILE = "-Wno-error";
 

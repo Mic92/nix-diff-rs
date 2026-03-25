@@ -1,6 +1,9 @@
 use crate::types::{Derivation, Output};
 use anyhow::{Context, Result, anyhow};
-use memchr::{memchr, memchr2};
+use harmonia_store_aterm::parse_derivation_aterm;
+use harmonia_store_core::derivation::{DerivationInputs, DerivationOutput};
+use harmonia_store_core::store_path::{StoreDir, StorePath, StorePathName};
+use harmonia_utils_hash::fmt::CommonHash;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
@@ -8,328 +11,148 @@ pub fn parse_derivation(path: &str) -> Result<Derivation> {
     let content = fs::read_to_string(path)
         .with_context(|| format!("Failed to read derivation file: {path}"))?;
 
-    parse_derivation_string(&content)
+    let store_dir = store_dir_from_drv_path(path)?;
+    let name = extract_drv_name(path, &store_dir);
+
+    let drv = parse_derivation_aterm(&store_dir, &content, name)
+        .map_err(|e| anyhow!("Failed to parse ATerm: {e}"))?;
+
+    Ok(convert_derivation(&store_dir, drv))
 }
 
 pub fn parse_derivation_string(input: &str) -> Result<Derivation> {
-    let mut parser = Parser::new(input);
-    parser.parse_derivation()
+    let store_dir = StoreDir::default();
+    let name: StorePathName = "unknown".parse().unwrap();
+
+    let drv = parse_derivation_aterm(&store_dir, input, name)
+        .map_err(|e| anyhow!("Failed to parse ATerm: {e}"))?;
+
+    Ok(convert_derivation(&store_dir, drv))
 }
 
-struct Parser<'a> {
-    input: &'a str,
-    bytes: &'a [u8],
-    pos: usize,
+/// Infer the store directory from a .drv path like `/nix/store/hash-name.drv` → `/nix/store`.
+fn store_dir_from_drv_path(path: &str) -> Result<StoreDir> {
+    let p = std::path::Path::new(path);
+    let parent = p
+        .parent()
+        .ok_or_else(|| anyhow!("derivation path has no parent: {path}"))?;
+    StoreDir::new(parent).map_err(|e| anyhow!("invalid store dir from path {path}: {e}"))
 }
 
-impl<'a> Parser<'a> {
-    fn new(input: &'a str) -> Self {
-        Parser {
-            input,
-            bytes: input.as_bytes(),
-            pos: 0,
-        }
-    }
+/// Extract the derivation name from a store path like `/nix/store/hash-name.drv`.
+/// Nix strips the `.drv` suffix to get the derivation name.
+fn extract_drv_name(path: &str, store_dir: &StoreDir) -> StorePathName {
+    let fallback: StorePathName = "unknown".parse().unwrap();
 
-    fn parse_derivation(&mut self) -> Result<Derivation> {
-        self.expect_str("Derive(")?;
+    let base_name = match store_dir.strip_prefix(path) {
+        Ok(b) => b,
+        Err(_) => return fallback,
+    };
 
-        // Parse outputs
-        let outputs = self.parse_outputs()?;
-        self.expect_char(',')?;
+    let sp: StorePath = match base_name.parse() {
+        Ok(p) => p,
+        Err(_) => return fallback,
+    };
 
-        // Parse input derivations
-        let input_derivations = self.parse_input_derivations()?;
-        self.expect_char(',')?;
+    let name_str = sp.name().to_string();
+    let drv_name = name_str.strip_suffix(".drv").unwrap_or(&name_str);
 
-        // Parse input sources
-        let input_sources = self.parse_input_sources()?;
-        self.expect_char(',')?;
+    drv_name.parse().unwrap_or(fallback)
+}
 
-        // Parse platform
-        let platform = self.parse_bytes()?;
-        self.expect_char(',')?;
+fn convert_derivation(
+    store_dir: &StoreDir,
+    drv: harmonia_store_core::derivation::Derivation,
+) -> Derivation {
+    let outputs = convert_outputs(store_dir, &drv);
+    let inputs = DerivationInputs::from(&drv.inputs);
 
-        // Parse builder
-        let builder = self.parse_bytes()?;
-        self.expect_char(',')?;
-
-        // Parse args
-        let args = self.parse_bytes_list()?;
-        self.expect_char(',')?;
-
-        // Parse environment
-        let env = self.parse_environment()?;
-
-        self.expect_char(')')?;
-
-        Ok(Derivation {
-            outputs,
-            input_sources,
-            input_derivations,
-            platform,
-            builder,
-            args,
-            env,
+    let input_derivations: BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>> = inputs
+        .drvs
+        .iter()
+        .map(|(sp, oi)| {
+            let path = store_dir.display(sp).to_string().into_bytes();
+            let outs = oi
+                .outputs
+                .iter()
+                .map(|o| o.to_string().into_bytes())
+                .collect();
+            (path, outs)
         })
+        .collect();
+
+    let input_sources: BTreeSet<Vec<u8>> = inputs
+        .srcs
+        .iter()
+        .map(|sp| store_dir.display(sp).to_string().into_bytes())
+        .collect();
+
+    let platform = drv.platform.to_vec();
+    let builder = drv.builder.to_vec();
+    let args = drv.args.iter().map(|a| a.to_vec()).collect();
+    let env = drv
+        .env
+        .iter()
+        .map(|(k, v)| (k.to_vec(), v.to_vec()))
+        .collect();
+
+    Derivation {
+        outputs,
+        input_sources,
+        input_derivations,
+        platform,
+        builder,
+        args,
+        env,
     }
+}
 
-    fn parse_outputs(&mut self) -> Result<BTreeMap<Vec<u8>, Output>> {
-        self.expect_char('[')?;
-        let mut outputs = BTreeMap::new(); // BTreeMap doesn't support with_capacity
-
-        while self.peek() != Some(']') {
-            self.expect_char('(')?;
-            let name = self.parse_bytes()?;
-            self.expect_char(',')?;
-            let path = self.parse_bytes()?;
-            self.expect_char(',')?;
-            let hash_algorithm = self.parse_optional_bytes()?;
-            self.expect_char(',')?;
-            let hash = self.parse_optional_bytes()?;
-            self.expect_char(')')?;
-
-            outputs.insert(
-                name,
-                Output {
-                    path,
-                    hash_algorithm,
-                    hash,
+fn convert_outputs(
+    store_dir: &StoreDir,
+    drv: &harmonia_store_core::derivation::Derivation,
+) -> BTreeMap<Vec<u8>, Output> {
+    drv.outputs
+        .iter()
+        .map(|(name, output)| {
+            let name_bytes = name.to_string().into_bytes();
+            let out = match output {
+                DerivationOutput::InputAddressed(sp) => Output {
+                    path: store_dir.display(sp).to_string().into_bytes(),
+                    hash_algorithm: None,
+                    hash: None,
                 },
-            );
-
-            if self.peek() == Some(',') {
-                self.advance();
-            }
-        }
-
-        self.expect_char(']')?;
-        Ok(outputs)
-    }
-
-    fn parse_input_derivations(&mut self) -> Result<BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>>> {
-        self.expect_char('[')?;
-        let mut inputs = BTreeMap::new();
-
-        while self.peek() != Some(']') {
-            self.expect_char('(')?;
-            let path = self.parse_bytes()?;
-            self.expect_char(',')?;
-            let outputs = self.parse_bytes_set()?;
-            self.expect_char(')')?;
-
-            inputs.insert(path, outputs);
-
-            if self.peek() == Some(',') {
-                self.advance();
-            }
-        }
-
-        self.expect_char(']')?;
-        Ok(inputs)
-    }
-
-    fn parse_input_sources(&mut self) -> Result<BTreeSet<Vec<u8>>> {
-        let paths = self.parse_bytes_list()?;
-        Ok(paths.into_iter().collect())
-    }
-
-    fn parse_environment(&mut self) -> Result<BTreeMap<Vec<u8>, Vec<u8>>> {
-        self.expect_char('[')?;
-        let mut env = BTreeMap::new();
-
-        while self.peek() != Some(']') {
-            self.expect_char('(')?;
-            let key = self.parse_bytes()?;
-            self.expect_char(',')?;
-            let value = self.parse_bytes()?;
-            self.expect_char(')')?;
-
-            env.insert(key, value);
-
-            if self.peek() == Some(',') {
-                self.advance();
-            }
-        }
-
-        self.expect_char(']')?;
-        Ok(env)
-    }
-
-    fn parse_bytes(&mut self) -> Result<Vec<u8>> {
-        self.skip_whitespace();
-        self.expect_char('"')?;
-
-        // Find the closing quote position
-        let start = self.pos;
-        let end_pos =
-            memchr(b'"', &self.bytes[start..]).ok_or_else(|| anyhow!("Unterminated string"))?;
-
-        // Fast path: check if there are any escapes in the string
-        if memchr(b'\\', &self.bytes[start..start + end_pos]).is_none() {
-            // No escapes, we can just copy the bytes directly
-            self.pos = start + end_pos + 1; // Skip past the closing quote
-            return Ok(self.bytes[start..start + end_pos].to_vec());
-        }
-
-        // Slow path: handle escapes using SIMD to find next escape or quote
-        let mut result = Vec::with_capacity(end_pos); // Use actual string length as hint
-        let mut current_pos = self.pos;
-
-        loop {
-            // Find next quote or backslash using SIMD
-            if let Some(special_pos) = memchr2(b'"', b'\\', &self.bytes[current_pos..]) {
-                // Copy everything before the special character
-                if special_pos > 0 {
-                    result.extend_from_slice(&self.bytes[current_pos..current_pos + special_pos]);
-                }
-
-                current_pos += special_pos;
-                let special_char = self.bytes[current_pos];
-
-                if special_char == b'"' {
-                    // Found closing quote
-                    self.pos = current_pos + 1;
-                    return Ok(result);
-                } else {
-                    // Handle escape
-                    current_pos += 1; // Skip backslash
-                    if current_pos >= self.bytes.len() {
-                        return Err(anyhow!("Unexpected end of input in string"));
+                DerivationOutput::CAFixed(ca) => {
+                    let path = output
+                        .path(store_dir, &drv.name, name)
+                        .ok()
+                        .flatten()
+                        .map(|sp| store_dir.display(&sp).to_string().into_bytes())
+                        .unwrap_or_default();
+                    Output {
+                        path,
+                        hash_algorithm: Some(ca.method_algorithm().to_string().into_bytes()),
+                        hash: Some(ca.hash().as_base16().as_bare().to_string().into_bytes()),
                     }
-
-                    let escaped = self.bytes[current_pos];
-                    match escaped {
-                        b'n' => result.push(b'\n'),
-                        b't' => result.push(b'\t'),
-                        b'r' => result.push(b'\r'),
-                        b'\\' => result.push(b'\\'),
-                        b'"' => result.push(b'"'),
-                        _ => {
-                            // For any other escape, just push the byte as is
-                            result.push(escaped);
-                        }
-                    }
-                    current_pos += 1;
                 }
-            } else {
-                // No more quotes or escapes, this is an error
-                return Err(anyhow!("Unterminated string"));
-            }
-        }
-    }
-
-    fn parse_optional_bytes(&mut self) -> Result<Option<Vec<u8>>> {
-        self.skip_whitespace();
-        if self.peek() == Some('"') {
-            Ok(Some(self.parse_bytes()?))
-        } else {
-            self.expect_str("")?;
-            Ok(None)
-        }
-    }
-
-    fn parse_bytes_list(&mut self) -> Result<Vec<Vec<u8>>> {
-        self.expect_char('[')?;
-        let mut items = Vec::new();
-
-        while self.peek() != Some(']') {
-            items.push(self.parse_bytes()?);
-            if self.peek() == Some(',') {
-                self.advance();
-            }
-        }
-
-        self.expect_char(']')?;
-        Ok(items)
-    }
-
-    fn parse_bytes_set(&mut self) -> Result<BTreeSet<Vec<u8>>> {
-        self.expect_char('[')?;
-        let mut items = BTreeSet::new();
-
-        while self.peek() != Some(']') {
-            items.insert(self.parse_bytes()?);
-            if self.peek() == Some(',') {
-                self.advance();
-            }
-        }
-
-        self.expect_char(']')?;
-        Ok(items)
-    }
-
-    fn expect_str(&mut self, expected: &str) -> Result<()> {
-        self.skip_whitespace();
-        if self.input[self.pos..].starts_with(expected) {
-            self.pos += expected.len();
-            Ok(())
-        } else {
-            Err(anyhow!("Expected '{expected}' at position {}", self.pos))
-        }
-    }
-
-    fn expect_char(&mut self, expected: char) -> Result<()> {
-        // Fast path: check current position without skipping whitespace first
-        if self.pos < self.bytes.len() {
-            let byte = self.bytes[self.pos];
-            if byte < 128 && byte as char == expected {
-                self.pos += 1;
-                return Ok(());
-            }
-        }
-
-        // Slow path: skip whitespace and check again
-        self.skip_whitespace();
-        match self.peek() {
-            Some(ch) if ch == expected => {
-                self.advance();
-                Ok(())
-            }
-            Some(ch) => Err(anyhow!(
-                "Expected '{}' but found '{}' at position {}",
-                expected,
-                ch,
-                self.pos
-            )),
-            None => Err(anyhow!("Expected '{expected}' but reached end of input")),
-        }
-    }
-
-    fn skip_whitespace(&mut self) {
-        while let Some(ch) = self.peek() {
-            if ch.is_whitespace() {
-                self.advance();
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn peek(&self) -> Option<char> {
-        if self.pos >= self.bytes.len() {
-            return None;
-        }
-        // Fast path for ASCII
-        let byte = self.bytes[self.pos];
-        if byte < 128 {
-            return Some(byte as char);
-        }
-        // Slower path for UTF-8
-        self.input[self.pos..].chars().next()
-    }
-
-    fn advance(&mut self) {
-        if self.pos >= self.bytes.len() {
-            return;
-        }
-        // Fast path for ASCII
-        if self.bytes[self.pos] < 128 {
-            self.pos += 1;
-        } else if let Some(ch) = self.input[self.pos..].chars().next() {
-            self.pos += ch.len_utf8();
-        }
-    }
+                DerivationOutput::CAFloating(cama) => Output {
+                    path: Vec::new(),
+                    hash_algorithm: Some(cama.to_string().into_bytes()),
+                    hash: None,
+                },
+                DerivationOutput::Impure(cama) => Output {
+                    path: Vec::new(),
+                    hash_algorithm: Some(cama.to_string().into_bytes()),
+                    hash: Some(b"impure".to_vec()),
+                },
+                DerivationOutput::Deferred => Output {
+                    path: Vec::new(),
+                    hash_algorithm: None,
+                    hash: None,
+                },
+            };
+            (name_bytes, out)
+        })
+        .collect()
 }
 
 pub fn get_derivation_path(store_path: &str) -> Result<String> {
@@ -367,7 +190,7 @@ mod tests {
 
     #[test]
     fn test_parse_simple_derivation() {
-        let drv = r#"Derive([("out","/nix/store/abc-test","","")],[],[],"/bin/bash","/nix/store/xyz-builder",["-c","echo hello"],[("name","test"),("out","/nix/store/abc-test")])"#;
+        let drv = r#"Derive([("out","/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-test","","")],[],[],"/bin/bash","/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-builder",["-c","echo hello"],[("name","test"),("out","/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-test")])"#;
         let result = parse_derivation_string(drv).unwrap();
         assert_eq!(result.outputs.len(), 1);
         assert_eq!(result.platform, b"/bin/bash");
