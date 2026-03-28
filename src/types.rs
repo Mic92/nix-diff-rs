@@ -157,25 +157,13 @@ pub struct StringDiff {
     pub new: Vec<u8>,
 }
 
+/// A textual diff. We store the raw old/new content rather than a
+/// pre-computed list of lines so the renderer can choose how to present
+/// it (plain line diff or delta-style inline word highlighting).
 #[derive(Debug, Clone, PartialEq)]
 pub enum TextDiff {
     Binary,
-    Text(Vec<DiffLine>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum DiffLine {
-    Context(Vec<u8>),
-    Added(Vec<u8>),
-    Removed(Vec<u8>),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum DiffOrientation {
-    #[default]
-    Line,
-    Word,
-    Character,
+    Text { old: Vec<u8>, new: Vec<u8> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -202,6 +190,10 @@ pub struct RenderOptions {
     pub input_list_limit: usize,
     /// Maximum recursion depth into input derivations. `None` = unlimited.
     pub max_depth: Option<usize>,
+    /// Highlight changed words within changed lines (delta-style).
+    /// Automatically disabled when color is off since it relies on
+    /// reverse-video escapes.
+    pub inline_highlight: bool,
 }
 
 impl Default for RenderOptions {
@@ -212,6 +204,7 @@ impl Default for RenderOptions {
             verbose: false,
             input_list_limit: 10,
             max_depth: None,
+            inline_highlight: true,
         }
     }
 }

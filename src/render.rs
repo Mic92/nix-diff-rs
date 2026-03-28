@@ -8,6 +8,8 @@ const YELLOW: &[u8] = b"\x1b[33m";
 const CYAN: &[u8] = b"\x1b[36m";
 const BOLD: &[u8] = b"\x1b[1m";
 const DIM: &[u8] = b"\x1b[2m";
+const REVERSE: &[u8] = b"\x1b[7m";
+const NOREVERSE: &[u8] = b"\x1b[27m";
 const RESET: &[u8] = b"\x1b[0m";
 
 macro_rules! extend {
@@ -24,6 +26,7 @@ pub struct Renderer {
     verbose: bool,
     input_list_limit: usize,
     max_depth: Option<usize>,
+    inline_highlight: bool,
 }
 
 impl Renderer {
@@ -42,6 +45,9 @@ impl Renderer {
             verbose: opts.verbose,
             input_list_limit: opts.input_list_limit,
             max_depth: opts.max_depth,
+            // Inline highlighting relies on reverse-video ANSI escapes;
+            // without color it would just print the same text twice.
+            inline_highlight: opts.inline_highlight && use_color,
         }
     }
 
@@ -133,9 +139,7 @@ impl Renderer {
                 // For multi-line arguments (like scripts), show them as a text diff
                 let StringDiff { old, new } = &arg_diff.diff;
                 if old.contains(&b'\n') || new.contains(&b'\n') {
-                    // Create a proper line-by-line diff
-                    let text_diff = self.create_text_diff(old, new);
-                    self.format_text_diff(&mut output, &text_diff, indent + 4);
+                    self.format_text_diff(&mut output, old, new, indent + 4);
                 } else {
                     self.format_string_diff(&mut output, &arg_diff.diff, indent + 4);
                 }
@@ -236,11 +240,79 @@ impl Renderer {
 
     fn format_string_diff(&self, output: &mut Vec<u8>, diff: &StringDiff, indent: usize) {
         let StringDiff { old, new } = diff;
-        self.write_indent(output, indent);
-        extend!(output, self.red(), b"- ", old, self.reset(), b"\n");
+        if self.inline_highlight {
+            // Single-line pair: run a word-level diff once and highlight only
+            // the changed segments on each side. This makes store-path hash
+            // changes and version bumps immediately visible.
+            let old_toks = tokenize_path(old);
+            let new_toks = tokenize_path(new);
+            let ops = similar::capture_diff_slices(similar::Algorithm::Myers, &old_toks, &new_toks);
+            self.write_inline_line(
+                output,
+                indent,
+                self.red(),
+                b"- ",
+                &ops,
+                &old_toks,
+                &new_toks,
+                true,
+            );
+            self.write_inline_line(
+                output,
+                indent,
+                self.green(),
+                b"+ ",
+                &ops,
+                &old_toks,
+                &new_toks,
+                false,
+            );
+        } else {
+            self.write_indent(output, indent);
+            extend!(output, self.red(), b"- ", old, self.reset(), b"\n");
+            self.write_indent(output, indent);
+            extend!(output, self.green(), b"+ ", new, self.reset(), b"\n");
+        }
+    }
 
+    /// Write one side of an old/new pair with reverse-video highlighting on
+    /// the segments that differ. Tokenization is done by the caller so the
+    /// diff is computed once and reused for both sides.
+    #[allow(clippy::too_many_arguments)]
+    fn write_inline_line(
+        &self,
+        output: &mut Vec<u8>,
+        indent: usize,
+        color: &[u8],
+        sign: &[u8],
+        ops: &[similar::DiffOp],
+        old_toks: &[&[u8]],
+        new_toks: &[&[u8]],
+        is_old: bool,
+    ) {
         self.write_indent(output, indent);
-        extend!(output, self.green(), b"+ ", new, self.reset(), b"\n");
+        extend!(output, color, sign);
+        for op in ops {
+            for change in op.iter_changes(old_toks, new_toks) {
+                let emit = match change.tag() {
+                    ChangeTag::Equal => true,
+                    ChangeTag::Delete => is_old,
+                    ChangeTag::Insert => !is_old,
+                };
+                if !emit {
+                    continue;
+                }
+                let emph = change.tag() != ChangeTag::Equal;
+                if emph {
+                    output.extend_from_slice(REVERSE);
+                }
+                output.extend_from_slice(change.value());
+                if emph {
+                    output.extend_from_slice(NOREVERSE);
+                }
+            }
+        }
+        extend!(output, self.reset(), b"\n");
     }
 
     fn format_sources_diff(&self, output: &mut Vec<u8>, diff: &SourcesDiff, indent: usize) {
@@ -271,7 +343,21 @@ impl Renderer {
                 self.reset(),
                 b"\n"
             );
-            self.format_text_diff(output, &src_diff.diff, indent + 4);
+            match &src_diff.diff {
+                TextDiff::Binary => {
+                    self.write_indent(output, indent + 4);
+                    extend!(
+                        output,
+                        self.yellow(),
+                        b"Binary files differ",
+                        self.reset(),
+                        b"\n"
+                    );
+                }
+                TextDiff::Text { old, new } => {
+                    self.format_text_diff(output, old, new, indent + 4);
+                }
+            }
         }
     }
 
@@ -382,8 +468,7 @@ impl Renderer {
                 let StringDiff { old, new } = str_diff;
                 // For multi-line environment variables, show them as a text diff
                 if old.contains(&b'\n') || new.contains(&b'\n') {
-                    let text_diff = self.create_text_diff(old, new);
-                    self.format_text_diff(output, &text_diff, indent);
+                    self.format_text_diff(output, old, new, indent);
                 } else {
                     self.format_string_diff(output, str_diff, indent);
                 }
@@ -391,78 +476,52 @@ impl Renderer {
         }
     }
 
-    fn format_text_diff(&self, output: &mut Vec<u8>, diff: &TextDiff, indent: usize) {
-        match diff {
-            TextDiff::Binary => {
+    /// Render a multi-line text diff with context trimming. When inline
+    /// highlighting is enabled, changed words within changed lines are
+    /// reverse-video'd (delta-style), making it obvious *what* in the line
+    /// changed — particularly useful for store-path hash changes.
+    fn format_text_diff(&self, output: &mut Vec<u8>, old: &[u8], new: &[u8], indent: usize) {
+        let diff = SimilarTextDiff::from_lines(old, new);
+
+        for (idx, group) in diff.grouped_ops(self.context_lines).iter().enumerate() {
+            if idx > 0 {
                 self.write_indent(output, indent);
-                extend!(
-                    output,
-                    self.yellow(),
-                    b"Binary files differ",
-                    self.reset(),
-                    b"\n"
-                );
+                extend!(output, b"...\n");
             }
-            TextDiff::Text(lines) => {
-                use std::collections::VecDeque;
-
-                // Buffer up to context_lines of leading context so we can emit
-                // only the N lines immediately preceding a change.
-                let mut pending: VecDeque<&Vec<u8>> = VecDeque::new();
-                // How many context lines we may still emit after the most
-                // recent change.
-                let mut trailing_budget = 0usize;
-                // Whether we have already emitted something (to know when to
-                // print a separator for skipped context).
-                let mut emitted_any = false;
-                // Whether we skipped context since the last emission.
-                let mut skipped = false;
-
-                let write_context = |output: &mut Vec<u8>, text: &[u8]| {
-                    self.write_indent(output, indent);
-                    extend!(output, b"  ", text);
-                    if !text.ends_with(b"\n") {
-                        output.push(b'\n');
-                    }
-                };
-
-                for line in lines {
-                    match line {
-                        DiffLine::Context(text) => {
-                            if trailing_budget > 0 {
-                                write_context(output, text);
-                                trailing_budget -= 1;
-                                emitted_any = true;
+            for op in group {
+                if self.inline_highlight {
+                    for change in diff.iter_inline_changes(op) {
+                        let (color, sign): (&[u8], &[u8]) = match change.tag() {
+                            ChangeTag::Delete => (self.red(), b"- "),
+                            ChangeTag::Insert => (self.green(), b"+ "),
+                            ChangeTag::Equal => (b"", b"  "),
+                        };
+                        self.write_indent(output, indent);
+                        extend!(output, color, sign);
+                        for (emphasized, value) in change.iter_strings_lossy() {
+                            let bytes = value.as_bytes();
+                            // Strip trailing newline so reset comes before \n
+                            // (avoids color bleed in some pagers).
+                            let body = bytes.strip_suffix(b"\n").unwrap_or(bytes);
+                            if emphasized {
+                                extend!(output, REVERSE, body, NOREVERSE);
                             } else {
-                                pending.push_back(text);
-                                if pending.len() > self.context_lines {
-                                    pending.pop_front();
-                                    skipped = true;
-                                }
+                                output.extend_from_slice(body);
                             }
                         }
-                        DiffLine::Added(_) | DiffLine::Removed(_) => {
-                            if skipped && emitted_any {
-                                self.write_indent(output, indent);
-                                extend!(output, b"...\n");
-                            }
-                            skipped = false;
-                            for ctx in pending.drain(..) {
-                                write_context(output, ctx);
-                            }
-                            let (color, sign, text) = match line {
-                                DiffLine::Added(t) => (self.green(), b"+ ", t),
-                                DiffLine::Removed(t) => (self.red(), b"- ", t),
-                                DiffLine::Context(_) => unreachable!(),
-                            };
-                            self.write_indent(output, indent);
-                            // Emit reset before the trailing newline to avoid
-                            // color bleed into the next line on some pagers.
-                            let body = text.strip_suffix(b"\n").unwrap_or(text);
-                            extend!(output, color, sign, body, self.reset(), b"\n");
-                            trailing_budget = self.context_lines;
-                            emitted_any = true;
-                        }
+                        extend!(output, self.reset(), b"\n");
+                    }
+                } else {
+                    for change in diff.iter_changes(op) {
+                        let (color, sign): (&[u8], &[u8]) = match change.tag() {
+                            ChangeTag::Delete => (self.red(), b"- "),
+                            ChangeTag::Insert => (self.green(), b"+ "),
+                            ChangeTag::Equal => (b"", b"  "),
+                        };
+                        self.write_indent(output, indent);
+                        let val = change.value();
+                        let body = val.strip_suffix(b"\n").unwrap_or(val);
+                        extend!(output, color, sign, body, self.reset(), b"\n");
                     }
                 }
             }
@@ -540,23 +599,27 @@ impl Renderer {
     fn reset(&self) -> &[u8] {
         if self.use_color { RESET } else { b"" }
     }
+}
 
-    fn create_text_diff(&self, old: &[u8], new: &[u8]) -> TextDiff {
-        // Use similar's TextDiff to create a line-by-line diff
-        let diff = SimilarTextDiff::from_lines(old, new);
-
-        let mut lines = Vec::new();
-        for change in diff.iter_all_changes() {
-            let line = change.value().to_vec();
-            match change.tag() {
-                ChangeTag::Equal => lines.push(DiffLine::Context(line)),
-                ChangeTag::Insert => lines.push(DiffLine::Added(line)),
-                ChangeTag::Delete => lines.push(DiffLine::Removed(line)),
+/// Split on path/version separators so store-path hashes and version
+/// components become individual diff tokens. `similar::from_words` splits
+/// only on whitespace, which treats an entire store path as one token.
+fn tokenize_path(s: &[u8]) -> Vec<&[u8]> {
+    let mut toks = Vec::new();
+    let mut start = 0;
+    for (i, &b) in s.iter().enumerate() {
+        if matches!(b, b'/' | b'-' | b'.' | b'_' | b':' | b' ' | b'\t') {
+            if start < i {
+                toks.push(&s[start..i]);
             }
+            toks.push(&s[i..i + 1]);
+            start = i + 1;
         }
-
-        TextDiff::Text(lines)
     }
+    if start < s.len() {
+        toks.push(&s[start..]);
+    }
+    toks
 }
 
 /// An output change that only touches the store path (not hash/algo) is a
@@ -814,26 +877,18 @@ mod tests {
     }
 
     #[test]
-    fn format_text_diff_limits_trailing_context() {
-        // With context_lines=1, only 1 context line should follow a change.
-        // Previously in_change_block was never cleared, so all trailing
-        // context was emitted.
+    fn format_text_diff_limits_context() {
+        // With context_lines=1, only 1 context line should surround a change.
         let renderer = Renderer::new(RenderOptions {
             color_mode: ColorMode::Never,
             context_lines: 1,
             ..Default::default()
         });
-        let diff = TextDiff::Text(vec![
-            DiffLine::Context(b"a\n".to_vec()),
-            DiffLine::Context(b"b\n".to_vec()),
-            DiffLine::Added(b"NEW\n".to_vec()),
-            DiffLine::Context(b"c\n".to_vec()),
-            DiffLine::Context(b"d\n".to_vec()),
-            DiffLine::Context(b"e\n".to_vec()),
-        ]);
+        let old = b"a\nb\nc\nd\ne\n";
+        let new = b"a\nb\nNEW\nc\nd\ne\n";
 
         let mut out = Vec::new();
-        renderer.format_text_diff(&mut out, &diff, 0);
+        renderer.format_text_diff(&mut out, old, new, 0);
         let out = String::from_utf8(out).unwrap();
 
         // Leading: only "b" (1 line before change), then NEW, then only "c"
@@ -846,5 +901,50 @@ mod tests {
             "trailing context not limited: {out}"
         );
         assert!(!out.contains("  e\n"));
+    }
+
+    #[test]
+    fn inline_highlight_marks_changed_words() {
+        // With inline highlighting on, only the changed word segments should
+        // be wrapped in reverse-video, not the whole line. This lets the
+        // reader spot store-path hash changes and version bumps at a glance.
+        let renderer = Renderer::new(RenderOptions {
+            color_mode: ColorMode::Always,
+            ..Default::default()
+        });
+        let diff = StringDiff {
+            old: b"/nix/store/aaa-foo-1.0".to_vec(),
+            new: b"/nix/store/bbb-foo-2.0".to_vec(),
+        };
+        let mut out = Vec::new();
+        renderer.format_string_diff(&mut out, &diff, 0);
+        let out = String::from_utf8(out).unwrap();
+
+        // "foo" is unchanged → must NOT be inside a reverse-video span.
+        assert!(
+            out.contains("\x1b[7maaa\x1b[27m"),
+            "hash not highlighted:\n{out:?}"
+        );
+        assert!(
+            out.contains("\x1b[7mbbb\x1b[27m"),
+            "hash not highlighted:\n{out:?}"
+        );
+        // The common prefix "/nix/store/" must appear outside reverse-video.
+        assert!(
+            out.contains("- /nix/store/\x1b[7m"),
+            "common prefix wrongly highlighted:\n{out:?}"
+        );
+    }
+
+    #[test]
+    fn inline_highlight_disabled_without_color() {
+        // Reverse-video escapes are meaningless without color; inline
+        // highlighting must auto-disable to avoid emitting them.
+        let renderer = Renderer::new(RenderOptions {
+            color_mode: ColorMode::Never,
+            inline_highlight: true,
+            ..Default::default()
+        });
+        assert!(!renderer.inline_highlight);
     }
 }

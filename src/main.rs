@@ -2,7 +2,7 @@ use anyhow::{Context, Result, anyhow};
 use nix_diff::{diff, instantiate, parser, render, types};
 use std::env;
 use std::path::{Path, PathBuf};
-use types::{ColorMode, Derivation, DiffOrientation, RenderOptions};
+use types::{ColorMode, Derivation, RenderOptions};
 
 fn main() {
     // Follow diff(1) exit code convention: 0 = identical, 1 = differ, 2 = error.
@@ -20,7 +20,6 @@ fn run() -> Result<bool> {
     let args: Vec<String> = env::args().collect();
 
     let mut opts = RenderOptions::default();
-    let mut orientation = DiffOrientation::Line;
     let mut paths = Vec::new();
 
     let mut i = 1;
@@ -38,17 +37,8 @@ fn run() -> Result<bool> {
                     _ => return Err(anyhow!("Invalid color mode: {}", args[i])),
                 };
             }
-            "--orientation" => {
-                i += 1;
-                if i >= args.len() {
-                    return Err(anyhow!("--orientation requires an argument"));
-                }
-                orientation = match args[i].as_str() {
-                    "line" => DiffOrientation::Line,
-                    "word" => DiffOrientation::Word,
-                    "character" => DiffOrientation::Character,
-                    _ => return Err(anyhow!("Invalid orientation: {}", args[i])),
-                };
+            "--no-inline-highlight" => {
+                opts.inline_highlight = false;
             }
             "--context" => {
                 i += 1;
@@ -110,7 +100,7 @@ fn run() -> Result<bool> {
     let (drv1, path1) = load_derivation(&paths[0])?;
     let (drv2, path2) = load_derivation(&paths[1])?;
 
-    let mut diff_context = diff::DiffContext::new(orientation, opts.context_lines);
+    let mut diff_context = diff::DiffContext::new();
     let diff = diff_context.diff_derivations(&path1, &path2, &drv1, &drv2)?;
 
     let renderer = render::Renderer::new(opts);
@@ -130,7 +120,7 @@ fn print_help() {
     eprintln!();
     eprintln!("Options:");
     eprintln!("  --color <MODE>         Color mode: always, auto, never (default: auto)");
-    eprintln!("  --orientation <MODE>   Diff orientation: line, word, character (default: line)");
+    eprintln!("  --no-inline-highlight  Disable word-level highlighting within changed lines");
     eprintln!("  --context <LINES>      Number of context lines (default: 3)");
     eprintln!("  --input-list-limit <N> Max added/removed inputs to list (default: 10)");
     eprintln!("  --depth <N>            Max recursion depth into input derivations");

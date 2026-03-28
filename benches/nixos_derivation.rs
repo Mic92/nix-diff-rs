@@ -1,6 +1,6 @@
 use anyhow::Context;
 use criterion::{Criterion, criterion_group, criterion_main};
-use nix_diff::{diff::DiffContext, parser, types::DiffOrientation};
+use nix_diff::{diff::DiffContext, parser};
 use std::hint::black_box;
 use std::process::Command;
 
@@ -167,7 +167,7 @@ fn benchmark_nixos_diff(c: &mut Criterion) {
             .unwrap();
 
         b.iter(|| {
-            let mut context = DiffContext::new(DiffOrientation::Line, 3);
+            let mut context = DiffContext::new();
             context
                 .diff_derivations(
                     black_box(drv1_path.as_bytes()),

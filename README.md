@@ -11,7 +11,7 @@ A Rust port of [nix-diff](https://github.com/Gabriel439/nix-diff), a tool to exp
   - `.nix` files (will be instantiated automatically)
   - Flake references (e.g., `nixpkgs#hello`, `path:/path/to/flake#package`)
 - Colored output with support for `NO_COLOR` environment variable
-- Configurable diff orientation (line, word, character)
+- Delta-style inline word highlighting (shows *what* changed in each line)
 - Minimal dependencies
 
 ## Installation
@@ -31,7 +31,7 @@ Arguments:
 
 Options:
   --color <MODE>         Color mode: always, auto, never (default: auto)
-  --orientation <MODE>   Diff orientation: line, word, character (default: line)
+  --no-inline-highlight  Disable word-level highlighting within changed lines
   --context <LINES>      Number of context lines (default: 3)
   --input-list-limit <N> Max added/removed inputs to list (default: 10)
   --depth <N>            Max recursion depth into input derivations
@@ -43,6 +43,10 @@ By default, the output hides mechanical noise such as output-path changes
 (which differ whenever anything else differs) and env vars that mirror
 output paths (`$out`, `$dev`, ...). Use `--verbose` to show everything,
 or `--depth N` to limit how deep the diff recurses into dependencies.
+
+When color is enabled, changed words within changed lines are highlighted
+with reverse-video (like `delta` or `diff-so-fancy`), so you can instantly
+spot store-path hash changes and version bumps without scanning full lines.
 
 ### Examples
 

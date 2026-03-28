@@ -1,23 +1,16 @@
 use crate::types::*;
 use anyhow::Result;
-use similar::{ChangeTag, TextDiff as SimilarTextDiff};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 
+#[derive(Default)]
 pub struct DiffContext {
     already_compared: HashSet<(Vec<u8>, Vec<u8>)>,
-    orientation: DiffOrientation,
-    #[allow(dead_code)]
-    context_lines: usize,
 }
 
 impl DiffContext {
-    pub fn new(orientation: DiffOrientation, context_lines: usize) -> Self {
-        DiffContext {
-            already_compared: HashSet::new(),
-            orientation,
-            context_lines,
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn diff_derivations(
@@ -459,24 +452,12 @@ impl DiffContext {
         if content1.contains(&0) || content2.contains(&0) {
             return TextDiff::Binary;
         }
-
-        let diff = match self.orientation {
-            DiffOrientation::Line => SimilarTextDiff::from_lines(content1, content2),
-            DiffOrientation::Word => SimilarTextDiff::from_words(content1, content2),
-            DiffOrientation::Character => SimilarTextDiff::from_chars(content1, content2),
-        };
-
-        let mut lines = Vec::new();
-        for change in diff.iter_all_changes() {
-            let line = change.value().to_vec();
-            match change.tag() {
-                ChangeTag::Equal => lines.push(DiffLine::Context(line)),
-                ChangeTag::Insert => lines.push(DiffLine::Added(line)),
-                ChangeTag::Delete => lines.push(DiffLine::Removed(line)),
-            }
+        // Defer actual diffing to the renderer so it can choose between
+        // plain line diff and inline word highlighting.
+        TextDiff::Text {
+            old: content1.to_vec(),
+            new: content2.to_vec(),
         }
-
-        TextDiff::Text(lines)
     }
 }
 
@@ -485,7 +466,7 @@ mod tests {
     use super::*;
 
     fn ctx() -> DiffContext {
-        DiffContext::new(DiffOrientation::Line, 3)
+        DiffContext::new()
     }
 
     #[test]
@@ -512,17 +493,9 @@ mod tests {
         assert!(diff.removed.is_empty(), "expected name-match, not removal");
         assert_eq!(diff.common.len(), 1, "expected one content diff");
         match &diff.common[0].diff {
-            TextDiff::Text(lines) => {
-                assert!(
-                    lines
-                        .iter()
-                        .any(|l| matches!(l, DiffLine::Removed(t) if t.starts_with(b"echo old")))
-                );
-                assert!(
-                    lines
-                        .iter()
-                        .any(|l| matches!(l, DiffLine::Added(t) if t.starts_with(b"echo new")))
-                );
+            TextDiff::Text { old, new } => {
+                assert!(old.starts_with(b"echo old"));
+                assert!(new.starts_with(b"echo new"));
             }
             _ => panic!("expected text diff"),
         }
