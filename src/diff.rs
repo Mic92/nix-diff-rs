@@ -148,25 +148,75 @@ impl DiffContext {
         sources1: &BTreeSet<Vec<u8>>,
         sources2: &BTreeSet<Vec<u8>>,
     ) -> Result<Option<SourcesDiff>> {
-        let added: BTreeSet<_> = sources2.difference(sources1).cloned().collect();
-        let removed: BTreeSet<_> = sources1.difference(sources2).cloned().collect();
-        let common_paths: Vec<_> = sources1.intersection(sources2).cloned().collect();
+        // Extract name from a store path: /nix/store/hash-name -> name
+        fn get_source_name(path: &[u8]) -> &[u8] {
+            if let Some(last_slash) = path.iter().rposition(|&b| b == b'/') {
+                let filename = &path[last_slash + 1..];
+                if let Some(dash_pos) = filename.iter().position(|&b| b == b'-') {
+                    return &filename[dash_pos + 1..];
+                }
+            }
+            path
+        }
 
+        // Group paths by name so we can pair sources that changed hash
+        let mut by_name1: BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>> = BTreeMap::new();
+        let mut by_name2: BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>> = BTreeMap::new();
+        for p in sources1 {
+            by_name1
+                .entry(get_source_name(p).to_vec())
+                .or_default()
+                .insert(p.clone());
+        }
+        for p in sources2 {
+            by_name2
+                .entry(get_source_name(p).to_vec())
+                .or_default()
+                .insert(p.clone());
+        }
+
+        let all_names: BTreeSet<_> = by_name1.keys().chain(by_name2.keys()).cloned().collect();
+
+        let mut added = BTreeSet::new();
+        let mut removed = BTreeSet::new();
         let mut common = Vec::new();
-        for path in common_paths {
-            // Convert bytes to path for file system operations
-            if let Ok(path_str) = std::str::from_utf8(&path) {
-                if let Ok(content1) = fs::read(path_str) {
-                    if let Ok(content2) = fs::read(path_str) {
-                        if content1 != content2 {
-                            let diff = self.diff_file_contents(&content1, &content2);
+
+        let empty = BTreeSet::new();
+        for name in &all_names {
+            let paths1 = by_name1.get(name).unwrap_or(&empty);
+            let paths2 = by_name2.get(name).unwrap_or(&empty);
+
+            let only1: Vec<_> = paths1.difference(paths2).cloned().collect();
+            let only2: Vec<_> = paths2.difference(paths1).cloned().collect();
+
+            let pair_count = only1.len().min(only2.len());
+            for i in 0..pair_count {
+                let p1 = &only1[i];
+                let p2 = &only2[i];
+                match (
+                    std::str::from_utf8(p1).ok().and_then(|s| fs::read(s).ok()),
+                    std::str::from_utf8(p2).ok().and_then(|s| fs::read(s).ok()),
+                ) {
+                    (Some(c1), Some(c2)) => {
+                        if c1 != c2 {
                             common.push(SourceDiff {
-                                path: path.clone(),
-                                diff,
+                                path: name.clone(),
+                                diff: self.diff_file_contents(&c1, &c2),
                             });
                         }
                     }
+                    _ => {
+                        // Cannot read — fall back to reporting as added/removed
+                        removed.insert(p1.clone());
+                        added.insert(p2.clone());
+                    }
                 }
+            }
+            for p in &only1[pair_count..] {
+                removed.insert(p.clone());
+            }
+            for p in &only2[pair_count..] {
+                added.insert(p.clone());
             }
         }
 
@@ -436,6 +486,46 @@ mod tests {
 
     fn ctx() -> DiffContext {
         DiffContext::new(DiffOrientation::Line, 3)
+    }
+
+    #[test]
+    fn diff_sources_matches_by_name_and_diffs_contents() {
+        // Sources with the same name but different store hashes should be
+        // paired and their file contents compared. Previously the code
+        // iterated the intersection of full paths (always empty when hashes
+        // differ) and read the same file twice.
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("store");
+        std::fs::create_dir_all(&store).unwrap();
+
+        let p1 = store.join("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-script.sh");
+        let p2 = store.join("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-script.sh");
+        std::fs::write(&p1, b"echo old\n").unwrap();
+        std::fs::write(&p2, b"echo new\n").unwrap();
+
+        let s1: BTreeSet<Vec<u8>> = [p1.to_string_lossy().as_bytes().to_vec()].into();
+        let s2: BTreeSet<Vec<u8>> = [p2.to_string_lossy().as_bytes().to_vec()].into();
+
+        let diff = ctx().diff_sources(&s1, &s2).unwrap().unwrap();
+
+        assert!(diff.added.is_empty(), "expected name-match, not addition");
+        assert!(diff.removed.is_empty(), "expected name-match, not removal");
+        assert_eq!(diff.common.len(), 1, "expected one content diff");
+        match &diff.common[0].diff {
+            TextDiff::Text(lines) => {
+                assert!(
+                    lines
+                        .iter()
+                        .any(|l| matches!(l, DiffLine::Removed(t) if t.starts_with(b"echo old")))
+                );
+                assert!(
+                    lines
+                        .iter()
+                        .any(|l| matches!(l, DiffLine::Added(t) if t.starts_with(b"echo new")))
+                );
+            }
+            _ => panic!("expected text diff"),
+        }
     }
 
     #[test]
