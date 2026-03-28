@@ -126,7 +126,20 @@ fn run_nix_instantiate(mut cmd: Command, gcroot_path: &Path) -> Result<String> {
         );
     }
 
-    let gcroot_result = String::from_utf8(output.stdout)?.trim().to_string();
+    // nix-instantiate may print multiple paths (one per line) when the
+    // expression yields multiple derivations. Take the first and warn
+    // rather than failing cryptically in read_link().
+    let stdout = String::from_utf8(output.stdout)?;
+    let mut lines = stdout.lines().filter(|l| !l.is_empty());
+    let gcroot_result = lines
+        .next()
+        .ok_or_else(|| anyhow!("nix-instantiate produced no output"))?
+        .to_string();
+    if lines.next().is_some() {
+        eprintln!(
+            "warning: nix-instantiate produced multiple derivations, using the first: {gcroot_result}"
+        );
+    }
 
     // Read the symlink to get the actual .drv path
     // --add-root --indirect always creates a symlink pointing to the store
