@@ -181,6 +181,14 @@ pub fn get_derivation_path(store_path: &str) -> Result<String> {
 
     let drv_path = String::from_utf8(output.stdout)?.trim().to_string();
 
+    if drv_path == "unknown-deriver" {
+        return Err(anyhow!(
+            "No deriver known for {store_path}. \
+             The derivation may have been garbage-collected or the path was \
+             added directly (e.g., via nix-store --add)."
+        ));
+    }
+
     Ok(drv_path)
 }
 
