@@ -2,7 +2,6 @@
   lib,
   rustPlatform,
   clippy,
-  rust-jemalloc-sys,
   nix,
   enableClippy ? false,
   enableChecks ? false,
@@ -19,8 +18,6 @@ rustPlatform.buildRustPackage {
   };
 
   NIX_CFLAGS_COMPILE = "-Wno-error";
-
-  buildInputs = [ rust-jemalloc-sys ];
 
   nativeBuildInputs = lib.optional enableClippy clippy ++ lib.optional enableChecks nix;
 
