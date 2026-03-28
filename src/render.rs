@@ -309,41 +309,64 @@ impl Renderer {
                 );
             }
             TextDiff::Text(lines) => {
-                let mut context_count = 0;
-                let mut in_change_block = false;
+                use std::collections::VecDeque;
+
+                // Buffer up to context_lines of leading context so we can emit
+                // only the N lines immediately preceding a change.
+                let mut pending: VecDeque<&Vec<u8>> = VecDeque::new();
+                // How many context lines we may still emit after the most
+                // recent change.
+                let mut trailing_budget = 0usize;
+                // Whether we have already emitted something (to know when to
+                // print a separator for skipped context).
+                let mut emitted_any = false;
+                // Whether we skipped context since the last emission.
+                let mut skipped = false;
+
+                let write_context = |output: &mut Vec<u8>, text: &[u8]| {
+                    self.write_indent(output, indent);
+                    extend!(output, b"  ", text);
+                    if !text.ends_with(b"\n") {
+                        output.push(b'\n');
+                    }
+                };
 
                 for line in lines {
                     match line {
                         DiffLine::Context(text) => {
-                            if in_change_block || context_count < self.context_lines {
-                                self.write_indent(output, indent);
-                                extend!(output, b"  ", text);
-                                // Add newline if the text doesn't already end with one
-                                if !text.ends_with(b"\n") {
-                                    output.push(b'\n');
+                            if trailing_budget > 0 {
+                                write_context(output, text);
+                                trailing_budget -= 1;
+                                emitted_any = true;
+                            } else {
+                                pending.push_back(text);
+                                if pending.len() > self.context_lines {
+                                    pending.pop_front();
+                                    skipped = true;
                                 }
-                                context_count += 1;
                             }
                         }
-                        DiffLine::Added(text) => {
+                        DiffLine::Added(_) | DiffLine::Removed(_) => {
+                            if skipped && emitted_any {
+                                self.write_indent(output, indent);
+                                extend!(output, b"...\n");
+                            }
+                            skipped = false;
+                            for ctx in pending.drain(..) {
+                                write_context(output, ctx);
+                            }
+                            let (color, sign, text) = match line {
+                                DiffLine::Added(t) => (self.green(), b"+ ", t),
+                                DiffLine::Removed(t) => (self.red(), b"- ", t),
+                                DiffLine::Context(_) => unreachable!(),
+                            };
                             self.write_indent(output, indent);
-                            extend!(output, self.green(), b"+ ", text, self.reset());
-                            // Add newline if the text doesn't already end with one
+                            extend!(output, color, sign, text, self.reset());
                             if !text.ends_with(b"\n") {
                                 output.push(b'\n');
                             }
-                            in_change_block = true;
-                            context_count = 0;
-                        }
-                        DiffLine::Removed(text) => {
-                            self.write_indent(output, indent);
-                            extend!(output, self.red(), b"- ", text, self.reset());
-                            // Add newline if the text doesn't already end with one
-                            if !text.ends_with(b"\n") {
-                                output.push(b'\n');
-                            }
-                            in_change_block = true;
-                            context_count = 0;
+                            trailing_budget = self.context_lines;
+                            emitted_any = true;
                         }
                     }
                 }
@@ -406,5 +429,41 @@ impl Renderer {
         }
 
         TextDiff::Text(lines)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_text_diff_limits_trailing_context() {
+        // With context_lines=1, only 1 context line should follow a change.
+        // Previously in_change_block was never cleared, so all trailing
+        // context was emitted.
+        let renderer = Renderer::new(ColorMode::Never, 1);
+        let diff = TextDiff::Text(vec![
+            DiffLine::Context(b"a\n".to_vec()),
+            DiffLine::Context(b"b\n".to_vec()),
+            DiffLine::Added(b"NEW\n".to_vec()),
+            DiffLine::Context(b"c\n".to_vec()),
+            DiffLine::Context(b"d\n".to_vec()),
+            DiffLine::Context(b"e\n".to_vec()),
+        ]);
+
+        let mut out = Vec::new();
+        renderer.format_text_diff(&mut out, &diff, 0);
+        let out = String::from_utf8(out).unwrap();
+
+        // Leading: only "b" (1 line before change), then NEW, then only "c"
+        assert!(!out.contains("  a\n"), "leading context not limited: {out}");
+        assert!(out.contains("  b\n"));
+        assert!(out.contains("+ NEW\n"));
+        assert!(out.contains("  c\n"));
+        assert!(
+            !out.contains("  d\n"),
+            "trailing context not limited: {out}"
+        );
+        assert!(!out.contains("  e\n"));
     }
 }
