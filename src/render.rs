@@ -23,14 +23,22 @@ macro_rules! extend {
 }
 
 pub struct Renderer {
-    color_mode: ColorMode,
+    use_color: bool,
     context_lines: usize,
 }
 
 impl Renderer {
     pub fn new(color_mode: ColorMode, context_lines: usize) -> Self {
+        // Per https://no-color.org/, only a non-empty NO_COLOR disables color.
+        let no_color = std::env::var("NO_COLOR").is_ok_and(|v| !v.is_empty());
+        let use_color = !no_color
+            && match color_mode {
+                ColorMode::Always => true,
+                ColorMode::Never => false,
+                ColorMode::Auto => io::stdout().is_terminal(),
+            };
         Renderer {
-            color_mode,
+            use_color,
             context_lines,
         }
     }
@@ -385,33 +393,20 @@ impl Renderer {
         }
     }
 
-    fn should_use_color(&self) -> bool {
-        // Check NO_COLOR environment variable
-        if std::env::var("NO_COLOR").is_ok() {
-            return false;
-        }
-
-        match self.color_mode {
-            ColorMode::Always => true,
-            ColorMode::Never => false,
-            ColorMode::Auto => io::stdout().is_terminal(),
-        }
-    }
-
     fn red(&self) -> &[u8] {
-        if self.should_use_color() { RED } else { b"" }
+        if self.use_color { RED } else { b"" }
     }
     fn green(&self) -> &[u8] {
-        if self.should_use_color() { GREEN } else { b"" }
+        if self.use_color { GREEN } else { b"" }
     }
     fn yellow(&self) -> &[u8] {
-        if self.should_use_color() { YELLOW } else { b"" }
+        if self.use_color { YELLOW } else { b"" }
     }
     fn bold(&self) -> &[u8] {
-        if self.should_use_color() { BOLD } else { b"" }
+        if self.use_color { BOLD } else { b"" }
     }
     fn reset(&self) -> &[u8] {
-        if self.should_use_color() { RESET } else { b"" }
+        if self.use_color { RESET } else { b"" }
     }
 
     fn create_text_diff(&self, old: &[u8], new: &[u8]) -> TextDiff {
