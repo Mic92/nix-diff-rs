@@ -20,9 +20,6 @@ similar = { version = "2.7", features = ["bytes", "text"], default-features = fa
 tempfile = { version = "3.27", default-features = false }
 tinyjson = "2.5"
 
-[target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = "0.6"
-
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false }
 tempfile = { version = "3.27", default-features = false }
