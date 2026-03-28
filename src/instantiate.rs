@@ -3,7 +3,6 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 use tempfile::TempDir;
-use tinyjson::JsonValue;
 
 use crate::parser::parse_derivation;
 use crate::types::Derivation;
@@ -68,33 +67,31 @@ fn instantiate_flake(flake_ref: &str, gcroot_path: &Path) -> Result<String> {
     instantiate_expression(&expression, gcroot_path)
 }
 
+#[derive(serde::Deserialize)]
+struct FlakeMetadata {
+    path: Option<String>,
+    locked: Option<FlakeLocked>,
+}
+
+#[derive(serde::Deserialize)]
+struct FlakeLocked {
+    #[serde(rename = "narHash")]
+    nar_hash: Option<String>,
+}
+
 /// Safely extract `path` and `locked.narHash` from flake metadata JSON.
-/// tinyjson's `[]` indexing panics on missing keys, so walk the object
-/// manually and return a proper error.
 fn extract_flake_fields(json: &str) -> Result<(String, String)> {
-    use std::collections::HashMap;
+    let metadata: FlakeMetadata =
+        serde_json::from_str(json).context("Failed to parse flake metadata JSON")?;
 
-    let metadata: JsonValue = json
-        .parse()
-        .context("Failed to parse flake metadata JSON")?;
+    let store_path = metadata
+        .path
+        .ok_or_else(|| anyhow!("No path found in flake metadata"))?;
 
-    let root: &HashMap<String, JsonValue> = metadata
-        .get()
-        .ok_or_else(|| anyhow!("flake metadata is not a JSON object"))?;
-
-    let store_path = root
-        .get("path")
-        .and_then(|v| v.get::<String>())
-        .ok_or_else(|| anyhow!("No path found in flake metadata"))?
-        .clone();
-
-    let nar_hash = root
-        .get("locked")
-        .and_then(|v| v.get::<HashMap<String, JsonValue>>())
-        .and_then(|l| l.get("narHash"))
-        .and_then(|v| v.get::<String>())
-        .ok_or_else(|| anyhow!("No locked.narHash found in flake metadata"))?
-        .clone();
+    let nar_hash = metadata
+        .locked
+        .and_then(|l| l.nar_hash)
+        .ok_or_else(|| anyhow!("No locked.narHash found in flake metadata"))?;
 
     Ok((store_path, nar_hash))
 }
@@ -164,8 +161,8 @@ mod tests {
 
     #[test]
     fn flake_metadata_missing_locked_returns_error() {
-        // Older nix or unusual refs may omit "locked". Indexing with []
-        // panics in tinyjson; we must return a proper error instead.
+        // Older nix or unusual refs may omit "locked"; we must return
+        // a proper error instead of panicking.
         let json = r#"{"path":"/nix/store/x"}"#;
         let err = extract_flake_fields(json).unwrap_err();
         assert!(
