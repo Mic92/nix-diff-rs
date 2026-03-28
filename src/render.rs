@@ -292,6 +292,9 @@ impl Renderer {
     ) {
         self.write_indent(output, indent);
         extend!(output, color, sign);
+        // Track reverse-video state so adjacent emphasized tokens share a
+        // single REVERSE/NOREVERSE pair instead of wrapping each token.
+        let mut in_rev = false;
         for op in ops {
             for change in op.iter_changes(old_toks, new_toks) {
                 let emit = match change.tag() {
@@ -303,14 +306,15 @@ impl Renderer {
                     continue;
                 }
                 let emph = change.tag() != ChangeTag::Equal;
-                if emph {
-                    output.extend_from_slice(REVERSE);
+                if emph != in_rev {
+                    output.extend_from_slice(if emph { REVERSE } else { NOREVERSE });
+                    in_rev = emph;
                 }
                 output.extend_from_slice(change.value());
-                if emph {
-                    output.extend_from_slice(NOREVERSE);
-                }
             }
+        }
+        if in_rev {
+            output.extend_from_slice(NOREVERSE);
         }
         extend!(output, self.reset(), b"\n");
     }
