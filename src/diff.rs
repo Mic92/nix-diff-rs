@@ -197,18 +197,26 @@ impl DiffContext {
             path
         }
 
-        // Build maps from derivation name to path for both sets
-        let mut names_to_paths1: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
-        let mut names_to_paths2: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+        // Build maps from derivation name to paths for both sets. A derivation
+        // can have multiple inputs with the same name but different hashes,
+        // so we collect all paths per name instead of overwriting.
+        let mut names_to_paths1: HashMap<Vec<u8>, BTreeSet<Vec<u8>>> = HashMap::new();
+        let mut names_to_paths2: HashMap<Vec<u8>, BTreeSet<Vec<u8>>> = HashMap::new();
 
         for path in inputs1.keys() {
             let name = get_derivation_name(path).to_vec();
-            names_to_paths1.insert(name, path.clone());
+            names_to_paths1
+                .entry(name)
+                .or_default()
+                .insert(path.clone());
         }
 
         for path in inputs2.keys() {
             let name = get_derivation_name(path).to_vec();
-            names_to_paths2.insert(name, path.clone());
+            names_to_paths2
+                .entry(name)
+                .or_default()
+                .insert(path.clone());
         }
 
         let all_names: BTreeSet<Vec<u8>> = names_to_paths1
@@ -221,96 +229,61 @@ impl DiffContext {
         let mut removed = BTreeSet::new();
         let mut changed = Vec::new();
 
+        let empty: BTreeSet<Vec<u8>> = BTreeSet::new();
         for name in all_names {
-            match (names_to_paths1.get(&name), names_to_paths2.get(&name)) {
-                (Some(path1), Some(path2)) => {
-                    // Both have this dependency - check if they differ
-                    if path1 != path2 {
-                        // The paths are different, so the derivations have changed
-                        let outputs1 = &inputs1[path1];
-                        let outputs2 = &inputs2[path2];
+            let paths1 = names_to_paths1.get(&name).unwrap_or(&empty);
+            let paths2 = names_to_paths2.get(&name).unwrap_or(&empty);
 
-                        let outputs_diff = if outputs1 != outputs2 {
-                            let added_outputs: BTreeSet<_> =
-                                outputs2.difference(outputs1).cloned().collect();
-                            let removed_outputs: BTreeSet<_> =
-                                outputs1.difference(outputs2).cloned().collect();
+            // Paths present in both are unchanged at the path level (may still
+            // have output-set differences, handled below). Paths only on one
+            // side are candidates for matching.
+            let only1: Vec<_> = paths1.difference(paths2).cloned().collect();
+            let only2: Vec<_> = paths2.difference(paths1).cloned().collect();
+            let common: Vec<_> = paths1.intersection(paths2).cloned().collect();
 
-                            if !added_outputs.is_empty() || !removed_outputs.is_empty() {
-                                Some(OutputSetDiff {
-                                    added: added_outputs,
-                                    removed: removed_outputs,
-                                })
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        };
+            // Pair up singletons on each side as "changed". If counts differ,
+            // the extras are added/removed. We pair in sorted order which is
+            // deterministic; without content inspection we cannot do better.
+            let pair_count = only1.len().min(only2.len());
+            for i in 0..pair_count {
+                let path1 = &only1[i];
+                let path2 = &only2[i];
+                self.push_changed_input(
+                    &name,
+                    path1,
+                    path2,
+                    &inputs1[path1],
+                    &inputs2[path2],
+                    &mut changed,
+                )?;
+            }
+            for path1 in &only1[pair_count..] {
+                removed.insert(DerivationPath(path1.clone()));
+            }
+            for path2 in &only2[pair_count..] {
+                added.insert(DerivationPath(path2.clone()));
+            }
 
-                        // Try to load and compare the derivations
-                        let derivation_diff = if let (Ok(path1_str), Ok(path2_str)) =
-                            (std::str::from_utf8(path1), std::str::from_utf8(path2))
-                        {
-                            if let (Ok(drv1), Ok(drv2)) = (
-                                crate::parser::parse_derivation(path1_str),
-                                crate::parser::parse_derivation(path2_str),
-                            ) {
-                                Some(Box::new(self.diff_derivations(path1, path2, &drv1, &drv2)?))
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        };
-
-                        // Store the name for display, not the path
+            // Same-path inputs: check for output-set changes
+            for path in &common {
+                let outputs1 = &inputs1[path];
+                let outputs2 = &inputs2[path];
+                if outputs1 != outputs2 {
+                    let added_outputs: BTreeSet<_> =
+                        outputs2.difference(outputs1).cloned().collect();
+                    let removed_outputs: BTreeSet<_> =
+                        outputs1.difference(outputs2).cloned().collect();
+                    if !added_outputs.is_empty() || !removed_outputs.is_empty() {
                         changed.push(InputDiff {
                             path: name.clone(),
-                            outputs: outputs_diff,
-                            derivation: derivation_diff,
+                            outputs: Some(OutputSetDiff {
+                                added: added_outputs,
+                                removed: removed_outputs,
+                            }),
+                            derivation: None,
                         });
-                    } else {
-                        // Same path - check if outputs differ
-                        let outputs1 = &inputs1[path1];
-                        let outputs2 = &inputs2[path2];
-
-                        let outputs_diff = if outputs1 != outputs2 {
-                            let added_outputs: BTreeSet<_> =
-                                outputs2.difference(outputs1).cloned().collect();
-                            let removed_outputs: BTreeSet<_> =
-                                outputs1.difference(outputs2).cloned().collect();
-
-                            if !added_outputs.is_empty() || !removed_outputs.is_empty() {
-                                Some(OutputSetDiff {
-                                    added: added_outputs,
-                                    removed: removed_outputs,
-                                })
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        };
-
-                        if outputs_diff.is_some() {
-                            changed.push(InputDiff {
-                                path: name.clone(),
-                                outputs: outputs_diff,
-                                derivation: None,
-                            });
-                        }
                     }
                 }
-                (Some(path1), None) => {
-                    // Only in inputs1 - removed
-                    removed.insert(DerivationPath(path1.clone()));
-                }
-                (None, Some(path2)) => {
-                    // Only in inputs2 - added
-                    added.insert(DerivationPath(path2.clone()));
-                }
-                (None, None) => unreachable!(),
             }
         }
 
@@ -323,6 +296,53 @@ impl DiffContext {
                 changed,
             }))
         }
+    }
+
+    fn push_changed_input(
+        &mut self,
+        name: &[u8],
+        path1: &[u8],
+        path2: &[u8],
+        outputs1: &BTreeSet<Vec<u8>>,
+        outputs2: &BTreeSet<Vec<u8>>,
+        changed: &mut Vec<InputDiff>,
+    ) -> Result<()> {
+        let outputs_diff = if outputs1 != outputs2 {
+            let added_outputs: BTreeSet<_> = outputs2.difference(outputs1).cloned().collect();
+            let removed_outputs: BTreeSet<_> = outputs1.difference(outputs2).cloned().collect();
+            if !added_outputs.is_empty() || !removed_outputs.is_empty() {
+                Some(OutputSetDiff {
+                    added: added_outputs,
+                    removed: removed_outputs,
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Try to load and recursively diff the derivations
+        let derivation_diff =
+            if let (Ok(p1), Ok(p2)) = (std::str::from_utf8(path1), std::str::from_utf8(path2)) {
+                if let (Ok(drv1), Ok(drv2)) = (
+                    crate::parser::parse_derivation(p1),
+                    crate::parser::parse_derivation(p2),
+                ) {
+                    Some(Box::new(self.diff_derivations(path1, path2, &drv1, &drv2)?))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+        changed.push(InputDiff {
+            path: name.to_vec(),
+            outputs: outputs_diff,
+            derivation: derivation_diff,
+        });
+        Ok(())
     }
 
     fn diff_environment(
@@ -416,6 +436,40 @@ mod tests {
 
     fn ctx() -> DiffContext {
         DiffContext::new(DiffOrientation::Line, 3)
+    }
+
+    #[test]
+    fn diff_inputs_handles_duplicate_names() {
+        // Two input derivations can share the same name with different hashes
+        // (e.g., two "source.drv" inputs). The name-based matching must not
+        // silently drop one of them.
+        let mut inputs1: BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>> = BTreeMap::new();
+        inputs1.insert(
+            b"/nix/store/aaaa-source.drv".to_vec(),
+            [b"out".to_vec()].into(),
+        );
+        inputs1.insert(
+            b"/nix/store/bbbb-source.drv".to_vec(),
+            [b"out".to_vec()].into(),
+        );
+
+        // Second derivation has the same two inputs, unchanged
+        let inputs2 = inputs1.clone();
+
+        let diff = ctx().diff_inputs(&inputs1, &inputs2).unwrap();
+        // Identical inputs → no diff. With the bug, one input is dropped from
+        // each map and the survivor is compared against itself, still yielding
+        // None — so also assert we account for both paths when they differ:
+        assert!(diff.is_none());
+
+        // Now remove one from inputs2 — the diff must report exactly one removal
+        let mut inputs2 = inputs1.clone();
+        inputs2.remove(b"/nix/store/bbbb-source.drv".as_slice());
+
+        let diff = ctx().diff_inputs(&inputs1, &inputs2).unwrap().unwrap();
+        assert_eq!(diff.removed.len(), 1, "expected exactly one removed input");
+        assert!(diff.added.is_empty());
+        assert!(diff.changed.is_empty());
     }
 
     #[test]
