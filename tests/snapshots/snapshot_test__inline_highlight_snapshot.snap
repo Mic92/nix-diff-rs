@@ -1,0 +1,56 @@
+---
+source: tests/snapshot_test.rs
+expression: readable
+---
+<red>--- /nix/store/HASH-hello-v1.drv</>
+<grn>+++ /nix/store/HASH-hello-v2.drv</>
+<b>Arguments:</>
+  Argument 1:
+          mkdir -p $out/bin</>
+          cat > $out/bin/hello << 'EOF'</>
+      #!/bin/sh</>
+    <red>- echo "Hello, World! <rev>v1"</rev></>
+    <grn>+ echo "Hello, World! <rev>v2"</rev></>
+    <grn>+ <rev>echo "Now with more features!"</rev></>
+      EOF</>
+          chmod +x $out/bin/hello</>
+      </>
+          # Reference dependencies</>
+    <red>-     ln -s <rev>/nix/store/HASH-dep1/bin/dep1</rev> $out/bin/</>
+    <red>-     ln -s <rev>/nix/store/HASH-dep2/share</rev> $out/</>
+    <grn>+     ln -s <rev>/nix/store/HASH-dep1/bin/dep1</rev> $out/bin/</>
+    <grn>+     ln -s <rev>/nix/store/HASH-dep2/share</rev> $out/</>
+<b><cyn>• dep1.drv</>
+  <b>Arguments:</>
+    Argument 1:
+        mkdir -p $out/bin && echo '#!/bin/sh</>
+      <red>- echo Dependency <rev>1'</rev> > $out/bin/dep1 && chmod +x $out/bin/dep1</>
+      <grn>+ echo Dependency <rev>1 updated'</rev> > $out/bin/dep1 && chmod +x $out/bin/dep1</>
+<b><cyn>• dep2.drv</>
+  <b>Arguments:</>
+    Argument 1:
+      <red>- mkdir -p $out/share && echo 'Shared data <rev>v1'</rev> > $out/share/data.txt</>
+      <grn>+ mkdir -p $out/share && echo 'Shared data <rev>v2'</rev> > $out/share/data.txt</>
+<b>Environment:</>
+  buildScript:
+      echo "Starting build process..."</>
+      echo "Configuring environment"</>
+    <grn>+ echo "Setting up new features"</>
+      echo "Building dependencies"</>
+    <red>- echo "Compiling <rev>sources"</rev></>
+    <red>- echo "Running <rev>tests"</rev></>
+    <grn>+ echo "Compiling <rev>sources with optimizations"</rev></>
+    <grn>+ echo "Running <rev>extended test suite"</rev></>
+    <grn>+ <rev>echo "Generating documentation"</rev></>
+      echo "Build complete!"</>
+  description:
+    <red>- A simple hello world program <rev>v1</rev></>
+    <grn>+ A simple hello world program <rev>v2 with improvements</rev></>
+  name:
+    <red>- hello-<rev>v1</rev></>
+    <grn>+ hello-<rev>v2</rev></>
+  newFeature:
+    <grn>+ true</>
+  version:
+    <red>- <rev>1</rev>.0</>
+    <grn>+ <rev>2</rev>.0</>

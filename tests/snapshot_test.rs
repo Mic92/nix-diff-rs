@@ -123,12 +123,14 @@ fn test_hello_diff_with_context() {
 }
 
 #[test]
-fn test_inline_highlight() {
+fn test_inline_highlight_snapshot() {
     // Inline word-level highlighting is the default when color is on.
-    // Verify the output contains reverse-video escapes around changed
-    // segments.
+    // Snapshot the ANSI output so we can see exactly which segments get
+    // reverse-video'd. Escapes are rendered as readable tokens so the
+    // snapshot is reviewable in plain text.
     let tests_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
-    let (_nix_root, env_vars) = setup_nix_env();
+    let (nix_root, env_vars) = setup_nix_env();
+    let nix_store_dir = nix_root.path().join("store").to_string_lossy().to_string();
 
     let instantiate = |f: &str| {
         let mut cmd = Command::new("nix-instantiate");
@@ -146,18 +148,32 @@ fn test_inline_highlight() {
 
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_nix-diff"));
     cmd.args(["--color", "always", &drv1, &drv2]);
+    cmd.env_remove("NO_COLOR");
     for (k, v) in &env_vars {
         cmd.env(k, v);
     }
     let output = cmd.output().expect("Failed to run nix-diff");
 
     assert_eq!(output.status.code(), Some(1));
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let normalized = normalize_nix_output(&stdout, &nix_store_dir);
 
-    // The version env var changes from "1.0" to "2.0" — only the digit
-    // should be reverse-video'd, not the whole value.
+    // Render ANSI escapes as readable tokens so the snapshot shows
+    // exactly where reverse-video begins/ends.
+    let readable = normalized
+        .replace("\x1b[7m", "<rev>")
+        .replace("\x1b[27m", "</rev>")
+        .replace("\x1b[31m", "<red>")
+        .replace("\x1b[32m", "<grn>")
+        .replace("\x1b[33m", "<yel>")
+        .replace("\x1b[36m", "<cyn>")
+        .replace("\x1b[1m", "<b>")
+        .replace("\x1b[2m", "<dim>")
+        .replace("\x1b[0m", "</>");
+
     assert!(
-        stdout.contains("\x1b[7m"),
+        readable.contains("<rev>"),
         "expected reverse-video escapes for inline highlighting"
     );
+    assert_snapshot!(readable);
 }
