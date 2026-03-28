@@ -2,6 +2,8 @@
 
 A Rust port of [nix-diff](https://github.com/Gabriel439/nix-diff), a tool to explain why two Nix derivations differ.
 
+![nix-diff output with inline word highlighting](https://github.com/Mic92/nix-diff-rs/releases/download/assets/nix-diff-demo.png)
+
 ## Features
 
 - Compare two Nix derivations and show their differences
