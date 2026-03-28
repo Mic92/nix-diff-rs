@@ -5,13 +5,9 @@ use std::io::{self, IsTerminal, Write};
 const RED: &[u8] = b"\x1b[31m";
 const GREEN: &[u8] = b"\x1b[32m";
 const YELLOW: &[u8] = b"\x1b[33m";
-#[allow(dead_code)]
-const BLUE: &[u8] = b"\x1b[34m";
-#[allow(dead_code)]
-const MAGENTA: &[u8] = b"\x1b[35m";
-#[allow(dead_code)]
 const CYAN: &[u8] = b"\x1b[36m";
 const BOLD: &[u8] = b"\x1b[1m";
+const DIM: &[u8] = b"\x1b[2m";
 const RESET: &[u8] = b"\x1b[0m";
 
 macro_rules! extend {
@@ -25,31 +21,41 @@ macro_rules! extend {
 pub struct Renderer {
     use_color: bool,
     context_lines: usize,
+    verbose: bool,
+    input_list_limit: usize,
+    max_depth: Option<usize>,
 }
 
 impl Renderer {
-    pub fn new(color_mode: ColorMode, context_lines: usize) -> Self {
+    pub fn new(opts: RenderOptions) -> Self {
         // Per https://no-color.org/, only a non-empty NO_COLOR disables color.
         let no_color = std::env::var("NO_COLOR").is_ok_and(|v| !v.is_empty());
         let use_color = !no_color
-            && match color_mode {
+            && match opts.color_mode {
                 ColorMode::Always => true,
                 ColorMode::Never => false,
                 ColorMode::Auto => io::stdout().is_terminal(),
             };
         Renderer {
             use_color,
-            context_lines,
+            context_lines: opts.context_lines,
+            verbose: opts.verbose,
+            input_list_limit: opts.input_list_limit,
+            max_depth: opts.max_depth,
         }
     }
 
     /// Render the diff to stdout.
     /// Returns `true` if the derivations differ, `false` if identical.
-    pub fn render(&self, diff: &DerivationDiff) -> io::Result<bool> {
+    pub fn render(&self, diff: &DerivationDiff, path1: &[u8], path2: &[u8]) -> io::Result<bool> {
         let mut stdout = io::stdout();
-        let output = self.format_derivation_diff(diff, 0);
+        let mut header = Vec::new();
+        extend!(header, self.red(), b"--- ", path1, self.reset(), b"\n");
+        extend!(header, self.green(), b"+++ ", path2, self.reset(), b"\n");
+        let output = self.format_derivation_diff(diff, 0, 0);
         let differs = !output.is_empty();
         if differs {
+            stdout.write_all(&header)?;
             stdout.write_all(&output)?;
         } else {
             stdout.write_all(b"The derivations are identical.\n")?;
@@ -58,7 +64,12 @@ impl Renderer {
         Ok(differs)
     }
 
-    fn format_derivation_diff(&self, diff: &DerivationDiff, indent: usize) -> Vec<u8> {
+    fn format_derivation_diff(
+        &self,
+        diff: &DerivationDiff,
+        indent: usize,
+        depth: usize,
+    ) -> Vec<u8> {
         let mut output = Vec::new();
 
         let DerivationDiff {
@@ -74,16 +85,28 @@ impl Renderer {
 
         match outputs {
             OutputsDiff::Changed(output_diffs) => {
-                self.write_section(&mut output, b"Outputs", indent);
-                for out_diff in output_diffs {
-                    self.format_output_diff(&mut output, out_diff, indent + 2);
+                // By default, hide output-path-only changes: if two derivations
+                // differ at all, their output paths differ by construction.
+                // Showing them just adds noise. We still show additions,
+                // removals, and hash/algorithm changes (FOD hash updates).
+                let interesting: Vec<_> = if self.verbose {
+                    output_diffs.iter().collect()
+                } else {
+                    output_diffs
+                        .iter()
+                        .filter(|d| !is_path_only_change(&d.diff))
+                        .collect()
+                };
+                if !interesting.is_empty() {
+                    self.write_section(&mut output, b"Outputs", indent);
+                    for out_diff in interesting {
+                        self.format_output_diff(&mut output, out_diff, indent + 2);
+                    }
                 }
             }
-            OutputsDiff::AlreadyCompared => {
-                self.write_indent(&mut output, indent);
-                extend!(output, b"(already compared above)\n");
-                return output;
-            }
+            // AlreadyCompared is handled in format_inputs_diff so it can
+            // be collapsed onto the same line as the • header.
+            OutputsDiff::AlreadyCompared => return output,
             OutputsDiff::Identical => {}
         }
 
@@ -124,16 +147,34 @@ impl Renderer {
         }
 
         if let Some(inp_diff) = inputs {
-            self.format_inputs_diff(&mut output, inp_diff, indent);
+            self.format_inputs_diff(&mut output, inp_diff, indent, depth);
         }
 
         if let Some(env_diffs) = env {
-            self.write_section(&mut output, b"Environment", indent);
-            for (key, var_diff) in env_diffs {
-                if let Some(diff) = var_diff {
+            // Filter env vars that merely mirror output paths (e.g. $out,
+            // $dev) — they duplicate the Outputs section.
+            let output_names: std::collections::HashSet<_> = diff
+                .original
+                .outputs
+                .keys()
+                .chain(diff.new.outputs.keys())
+                .collect();
+            let interesting: Vec<_> = env_diffs
+                .iter()
+                .filter_map(|(k, v)| v.as_ref().map(|d| (k, d)))
+                .filter(|(k, _)| {
+                    self.verbose
+                        || (!output_names.contains(k)
+                            // `builder` duplicates the Builder section.
+                            && k.as_slice() != b"builder")
+                })
+                .collect();
+            if !interesting.is_empty() {
+                self.write_section(&mut output, b"Environment", indent);
+                for (key, var_diff) in interesting {
                     self.write_indent(&mut output, indent + 2);
                     extend!(output, key, b":\n");
-                    self.format_env_var_diff(&mut output, diff, indent + 4);
+                    self.format_env_var_diff(&mut output, var_diff, indent + 4);
                 }
             }
         }
@@ -234,7 +275,13 @@ impl Renderer {
         }
     }
 
-    fn format_inputs_diff(&self, output: &mut Vec<u8>, diff: &InputsDiff, indent: usize) {
+    fn format_inputs_diff(
+        &self,
+        output: &mut Vec<u8>,
+        diff: &InputsDiff,
+        indent: usize,
+        depth: usize,
+    ) {
         let InputsDiff {
             added,
             removed,
@@ -244,30 +291,44 @@ impl Renderer {
         // Only show section header if there are simple additions/removals
         if !added.is_empty() || !removed.is_empty() {
             self.write_section(output, b"Input derivations", indent);
-
-            for path in removed {
-                self.write_indent(output, indent + 2);
-                extend!(output, self.red(), b"- ", &path.0, self.reset(), b"\n");
-            }
-
-            for path in added {
-                self.write_indent(output, indent + 2);
-                extend!(output, self.green(), b"+ ", &path.0, self.reset(), b"\n");
-            }
+            self.write_path_list(
+                output,
+                removed.iter().map(|p| &p.0),
+                b"- ",
+                self.red(),
+                indent + 2,
+            );
+            self.write_path_list(
+                output,
+                added.iter().map(|p| &p.0),
+                b"+ ",
+                self.green(),
+                indent + 2,
+            );
         }
 
-        // Show changed derivations with "The input derivation named X differs" format
+        // Show changed derivations with a compact • bullet header.
         for inp_diff in changed {
+            let already = matches!(
+                inp_diff.derivation.as_deref(),
+                Some(DerivationDiff {
+                    outputs: OutputsDiff::AlreadyCompared,
+                    ..
+                })
+            );
             self.write_indent(output, indent);
             extend!(
                 output,
                 self.bold(),
-                b"The input derivation named `",
+                self.cyan(),
+                b"\xe2\x80\xa2 ",
                 &inp_diff.path,
-                b"` differs",
-                self.reset(),
-                b"\n"
+                self.reset()
             );
+            if already {
+                extend!(output, self.dim(), b" (already compared)", self.reset());
+            }
+            output.push(b'\n');
 
             // Consumed-output changes are independent of the nested derivation
             // diff: they describe which outputs the *parent* consumes from this
@@ -277,9 +338,20 @@ impl Renderer {
                 extend!(output, b"Consumed outputs:\n");
                 self.format_output_set_diff(output, out_diff, indent + 4);
             }
-            if let Some(drv_diff) = &inp_diff.derivation {
-                let sub_output = self.format_derivation_diff(drv_diff, indent + 2);
-                extend!(output, &sub_output);
+            if let (Some(drv_diff), false) = (&inp_diff.derivation, already) {
+                if self.max_depth.is_some_and(|d| depth + 1 > d) {
+                    self.write_indent(output, indent + 2);
+                    extend!(
+                        output,
+                        self.dim(),
+                        b"(depth limit reached, use --depth to show more)",
+                        self.reset(),
+                        b"\n"
+                    );
+                } else {
+                    let sub = self.format_derivation_diff(drv_diff, indent + 2, depth + 1);
+                    extend!(output, &sub);
+                }
             }
         }
     }
@@ -397,6 +469,45 @@ impl Renderer {
         }
     }
 
+    /// Write a list of store paths, truncating to `input_list_limit` entries
+    /// and summarizing the remainder. Large add/remove lists (e.g., after a
+    /// stdenv bump) otherwise dominate the output without adding insight.
+    fn write_path_list<'a, I>(
+        &self,
+        output: &mut Vec<u8>,
+        paths: I,
+        sign: &[u8],
+        color: &[u8],
+        indent: usize,
+    ) where
+        I: Iterator<Item = &'a Vec<u8>>,
+    {
+        let mut shown = 0;
+        let mut hidden = 0;
+        for path in paths {
+            if self.verbose || shown < self.input_list_limit {
+                self.write_indent(output, indent);
+                extend!(output, color, sign, path, self.reset(), b"\n");
+                shown += 1;
+            } else {
+                hidden += 1;
+            }
+        }
+        if hidden > 0 {
+            self.write_indent(output, indent);
+            extend!(
+                output,
+                self.dim(),
+                sign,
+                b"... and ",
+                hidden.to_string().as_bytes(),
+                b" more (use --verbose to show all)",
+                self.reset(),
+                b"\n"
+            );
+        }
+    }
+
     fn write_section(&self, output: &mut Vec<u8>, title: &[u8], indent: usize) {
         self.write_indent(output, indent);
         extend!(output, self.bold(), title, b":", self.reset(), b"\n");
@@ -416,6 +527,12 @@ impl Renderer {
     }
     fn yellow(&self) -> &[u8] {
         if self.use_color { YELLOW } else { b"" }
+    }
+    fn cyan(&self) -> &[u8] {
+        if self.use_color { CYAN } else { b"" }
+    }
+    fn dim(&self) -> &[u8] {
+        if self.use_color { DIM } else { b"" }
     }
     fn bold(&self) -> &[u8] {
         if self.use_color { BOLD } else { b"" }
@@ -442,6 +559,19 @@ impl Renderer {
     }
 }
 
+/// An output change that only touches the store path (not hash/algo) is a
+/// mechanical consequence of any other change and carries no information.
+fn is_path_only_change(d: &OutputDetailDiff) -> bool {
+    matches!(
+        d,
+        OutputDetailDiff::Changed {
+            hash_algo: None,
+            hash: None,
+            ..
+        }
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -463,7 +593,10 @@ mod tests {
         // InputDiff.outputs describes which outputs are *consumed from* the
         // input (e.g., ["out"] -> ["out","dev"]). This is independent of the
         // nested derivation diff and must be shown even when both are set.
-        let renderer = Renderer::new(ColorMode::Never, 3);
+        let renderer = Renderer::new(RenderOptions {
+            color_mode: ColorMode::Never,
+            ..Default::default()
+        });
         let inner = DerivationDiff {
             original: empty_drv(),
             new: empty_drv(),
@@ -492,7 +625,7 @@ mod tests {
         };
 
         let mut out = Vec::new();
-        renderer.format_inputs_diff(&mut out, &inputs, 0);
+        renderer.format_inputs_diff(&mut out, &inputs, 0, 0);
         let out = String::from_utf8(out).unwrap();
 
         assert!(out.contains("aarch64-linux"), "nested drv diff missing");
@@ -507,7 +640,10 @@ mod tests {
         // When the cycle detector short-circuits a nested diff, the output
         // should say "already compared" rather than printing a dangling
         // "X differs" header with no body.
-        let renderer = Renderer::new(ColorMode::Never, 3);
+        let renderer = Renderer::new(RenderOptions {
+            color_mode: ColorMode::Never,
+            ..Default::default()
+        });
         let inner = DerivationDiff {
             original: empty_drv(),
             new: empty_drv(),
@@ -530,7 +666,7 @@ mod tests {
         };
 
         let mut out = Vec::new();
-        renderer.format_inputs_diff(&mut out, &inputs, 0);
+        renderer.format_inputs_diff(&mut out, &inputs, 0, 0);
         let out = String::from_utf8(out).unwrap();
 
         assert!(out.contains("foo.drv"));
@@ -540,12 +676,153 @@ mod tests {
         );
     }
 
+    fn drv_with_output(name: &[u8], path: &[u8]) -> Derivation {
+        let mut outputs = std::collections::BTreeMap::new();
+        outputs.insert(
+            name.to_vec(),
+            Output {
+                path: path.to_vec(),
+                hash_algorithm: None,
+                hash: None,
+            },
+        );
+        Derivation {
+            outputs,
+            ..empty_drv()
+        }
+    }
+
+    #[test]
+    fn hides_output_path_noise_by_default() {
+        // Output store paths differ whenever *anything* else differs. Showing
+        // them on every nested derivation floods the diff with zero-signal
+        // noise. The env var `$out` mirrors the same path and is equally
+        // useless. Both must be hidden unless --verbose is set.
+        let old = drv_with_output(b"out", b"/nix/store/aaa-foo");
+        let new = drv_with_output(b"out", b"/nix/store/bbb-foo");
+        let mut env = std::collections::BTreeMap::new();
+        env.insert(
+            b"out".to_vec(),
+            Some(EnvVarDiff::Changed(StringDiff {
+                old: b"/nix/store/aaa-foo".to_vec(),
+                new: b"/nix/store/bbb-foo".to_vec(),
+            })),
+        );
+        env.insert(
+            b"version".to_vec(),
+            Some(EnvVarDiff::Changed(StringDiff {
+                old: b"1".to_vec(),
+                new: b"2".to_vec(),
+            })),
+        );
+        let diff = DerivationDiff {
+            original: old,
+            new,
+            outputs: OutputsDiff::Changed(vec![OutputDiff {
+                name: b"out".to_vec(),
+                diff: OutputDetailDiff::Changed {
+                    old: Output {
+                        path: b"/nix/store/aaa-foo".to_vec(),
+                        hash_algorithm: None,
+                        hash: None,
+                    },
+                    new: Box::new(Output {
+                        path: b"/nix/store/bbb-foo".to_vec(),
+                        hash_algorithm: None,
+                        hash: None,
+                    }),
+                    path: Some(StringDiff {
+                        old: b"/nix/store/aaa-foo".to_vec(),
+                        new: b"/nix/store/bbb-foo".to_vec(),
+                    }),
+                    hash_algo: None,
+                    hash: None,
+                },
+            }]),
+            platform: None,
+            builder: None,
+            args: None,
+            sources: None,
+            inputs: None,
+            env: Some(env),
+        };
+
+        let quiet = Renderer::new(RenderOptions {
+            color_mode: ColorMode::Never,
+            ..Default::default()
+        });
+        let out = String::from_utf8(quiet.format_derivation_diff(&diff, 0, 0)).unwrap();
+        assert!(!out.contains("Outputs"), "path-only output shown:\n{out}");
+        assert!(!out.contains("out:"), "$out env var shown:\n{out}");
+        assert!(out.contains("version"), "real env change missing:\n{out}");
+
+        let verbose = Renderer::new(RenderOptions {
+            color_mode: ColorMode::Never,
+            verbose: true,
+            ..Default::default()
+        });
+        let out = String::from_utf8(verbose.format_derivation_diff(&diff, 0, 0)).unwrap();
+        assert!(out.contains("Outputs"), "verbose should show outputs");
+        assert!(out.contains("out:"), "verbose should show $out");
+    }
+
+    #[test]
+    fn shows_fod_hash_changes() {
+        // Fixed-output derivation hash changes are semantically meaningful
+        // (e.g., a src update) and must NOT be filtered as path noise.
+        let diff = OutputDetailDiff::Changed {
+            old: Output {
+                path: b"/nix/store/aaa-src".to_vec(),
+                hash_algorithm: Some(b"sha256".to_vec()),
+                hash: Some(b"old".to_vec()),
+            },
+            new: Box::new(Output {
+                path: b"/nix/store/bbb-src".to_vec(),
+                hash_algorithm: Some(b"sha256".to_vec()),
+                hash: Some(b"new".to_vec()),
+            }),
+            path: Some(StringDiff {
+                old: b"/nix/store/aaa-src".to_vec(),
+                new: b"/nix/store/bbb-src".to_vec(),
+            }),
+            hash_algo: None,
+            hash: Some(StringDiff {
+                old: b"old".to_vec(),
+                new: b"new".to_vec(),
+            }),
+        };
+        assert!(!is_path_only_change(&diff));
+    }
+
+    #[test]
+    fn truncates_large_input_lists() {
+        // A stdenv bump can produce 100+ added/removed inputs. Listing them
+        // all buries the interesting changes.
+        let renderer = Renderer::new(RenderOptions {
+            color_mode: ColorMode::Never,
+            input_list_limit: 3,
+            ..Default::default()
+        });
+        let paths: Vec<Vec<u8>> = (0..10).map(|i| format!("path{i}").into_bytes()).collect();
+        let mut out = Vec::new();
+        renderer.write_path_list(&mut out, paths.iter(), b"+ ", b"", 0);
+        let out = String::from_utf8(out).unwrap();
+        assert!(out.contains("path0"));
+        assert!(out.contains("path2"));
+        assert!(!out.contains("path3"), "should be truncated:\n{out}");
+        assert!(out.contains("7 more"), "should summarize remainder:\n{out}");
+    }
+
     #[test]
     fn format_text_diff_limits_trailing_context() {
         // With context_lines=1, only 1 context line should follow a change.
         // Previously in_change_block was never cleared, so all trailing
         // context was emitted.
-        let renderer = Renderer::new(ColorMode::Never, 1);
+        let renderer = Renderer::new(RenderOptions {
+            color_mode: ColorMode::Never,
+            context_lines: 1,
+            ..Default::default()
+        });
         let diff = TextDiff::Text(vec![
             DiffLine::Context(b"a\n".to_vec()),
             DiffLine::Context(b"b\n".to_vec()),

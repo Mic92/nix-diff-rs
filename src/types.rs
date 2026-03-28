@@ -185,3 +185,33 @@ pub enum ColorMode {
     Auto,
     Never,
 }
+
+/// Options controlling what gets rendered.
+///
+/// By default we hide changes that are purely mechanical consequences of
+/// *other* changes (output store paths, env vars mirroring outputs). This
+/// keeps the diff focused on what the user actually changed. `verbose`
+/// restores the full firehose.
+#[derive(Debug, Clone)]
+pub struct RenderOptions {
+    pub color_mode: ColorMode,
+    pub context_lines: usize,
+    /// Show output path changes and output-mirroring env vars.
+    pub verbose: bool,
+    /// Maximum entries to show in added/removed input lists before summarizing.
+    pub input_list_limit: usize,
+    /// Maximum recursion depth into input derivations. `None` = unlimited.
+    pub max_depth: Option<usize>,
+}
+
+impl Default for RenderOptions {
+    fn default() -> Self {
+        Self {
+            color_mode: ColorMode::Auto,
+            context_lines: 3,
+            verbose: false,
+            input_list_limit: 10,
+            max_depth: None,
+        }
+    }
+}
