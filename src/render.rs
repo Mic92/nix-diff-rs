@@ -68,11 +68,19 @@ impl Renderer {
             ..
         } = diff;
 
-        if let OutputsDiff::Changed(output_diffs) = outputs {
-            self.write_section(&mut output, b"Outputs", indent);
-            for out_diff in output_diffs {
-                self.format_output_diff(&mut output, out_diff, indent + 2);
+        match outputs {
+            OutputsDiff::Changed(output_diffs) => {
+                self.write_section(&mut output, b"Outputs", indent);
+                for out_diff in output_diffs {
+                    self.format_output_diff(&mut output, out_diff, indent + 2);
+                }
             }
+            OutputsDiff::AlreadyCompared => {
+                self.write_indent(&mut output, indent);
+                extend!(output, b"(already compared above)\n");
+                return output;
+            }
+            OutputsDiff::Identical => {}
         }
 
         if let Some(plat_diff) = platform {
@@ -430,6 +438,56 @@ impl Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn empty_drv() -> Derivation {
+        Derivation {
+            outputs: Default::default(),
+            input_sources: Default::default(),
+            input_derivations: Default::default(),
+            platform: Vec::new(),
+            builder: Vec::new(),
+            args: Vec::new(),
+            env: Default::default(),
+        }
+    }
+
+    #[test]
+    fn already_compared_input_is_labeled() {
+        // When the cycle detector short-circuits a nested diff, the output
+        // should say "already compared" rather than printing a dangling
+        // "X differs" header with no body.
+        let renderer = Renderer::new(ColorMode::Never, 3);
+        let inner = DerivationDiff {
+            original: empty_drv(),
+            new: empty_drv(),
+            outputs: OutputsDiff::AlreadyCompared,
+            platform: None,
+            builder: None,
+            args: None,
+            sources: None,
+            inputs: None,
+            env: None,
+        };
+        let inputs = InputsDiff {
+            added: Default::default(),
+            removed: Default::default(),
+            changed: vec![InputDiff {
+                path: b"foo.drv".to_vec(),
+                outputs: None,
+                derivation: Some(Box::new(inner)),
+            }],
+        };
+
+        let mut out = Vec::new();
+        renderer.format_inputs_diff(&mut out, &inputs, 0);
+        let out = String::from_utf8(out).unwrap();
+
+        assert!(out.contains("foo.drv"));
+        assert!(
+            out.contains("already compared"),
+            "expected 'already compared' marker, got:\n{out}"
+        );
+    }
 
     #[test]
     fn format_text_diff_limits_trailing_context() {

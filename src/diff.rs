@@ -33,7 +33,7 @@ impl DiffContext {
             return Ok(DerivationDiff {
                 original: drv1.clone(),
                 new: drv2.clone(),
-                outputs: OutputsDiff::Identical,
+                outputs: OutputsDiff::AlreadyCompared,
                 platform: None,
                 builder: None,
                 args: None,

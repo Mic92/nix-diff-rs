@@ -76,6 +76,9 @@ pub struct DerivationDiff {
 #[derive(Debug, Clone, PartialEq)]
 pub enum OutputsDiff {
     Identical,
+    /// The derivation pair was already compared earlier in the tree
+    /// (cycle detection). Rendered as "(already compared above)".
+    AlreadyCompared,
     Changed(Vec<OutputDiff>),
 }
 
