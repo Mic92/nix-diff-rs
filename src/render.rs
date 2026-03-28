@@ -369,10 +369,10 @@ impl Renderer {
                                 DiffLine::Context(_) => unreachable!(),
                             };
                             self.write_indent(output, indent);
-                            extend!(output, color, sign, text, self.reset());
-                            if !text.ends_with(b"\n") {
-                                output.push(b'\n');
-                            }
+                            // Emit reset before the trailing newline to avoid
+                            // color bleed into the next line on some pagers.
+                            let body = text.strip_suffix(b"\n").unwrap_or(text);
+                            extend!(output, color, sign, body, self.reset(), b"\n");
                             trailing_budget = self.context_lines;
                             emitted_any = true;
                         }
