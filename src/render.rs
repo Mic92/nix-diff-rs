@@ -265,14 +265,17 @@ impl Renderer {
                 b"\n"
             );
 
+            // Consumed-output changes are independent of the nested derivation
+            // diff: they describe which outputs the *parent* consumes from this
+            // input. Show them regardless of whether we also have a drv diff.
+            if let Some(out_diff) = &inp_diff.outputs {
+                self.write_indent(output, indent + 2);
+                extend!(output, b"Consumed outputs:\n");
+                self.format_output_set_diff(output, out_diff, indent + 4);
+            }
             if let Some(drv_diff) = &inp_diff.derivation {
                 let sub_output = self.format_derivation_diff(drv_diff, indent + 2);
                 extend!(output, &sub_output);
-            } else if let Some(out_diff) = &inp_diff.outputs {
-                // Only outputs differ, not the derivation itself
-                self.write_indent(output, indent + 2);
-                extend!(output, b"Output changes:\n");
-                self.format_output_set_diff(output, out_diff, indent + 4);
             }
         }
     }
@@ -449,6 +452,50 @@ mod tests {
             args: Vec::new(),
             env: Default::default(),
         }
+    }
+
+    #[test]
+    fn input_diff_shows_both_outputs_and_derivation() {
+        // InputDiff.outputs describes which outputs are *consumed from* the
+        // input (e.g., ["out"] -> ["out","dev"]). This is independent of the
+        // nested derivation diff and must be shown even when both are set.
+        let renderer = Renderer::new(ColorMode::Never, 3);
+        let inner = DerivationDiff {
+            original: empty_drv(),
+            new: empty_drv(),
+            outputs: OutputsDiff::Identical,
+            platform: Some(StringDiff {
+                old: b"x86_64-linux".to_vec(),
+                new: b"aarch64-linux".to_vec(),
+            }),
+            builder: None,
+            args: None,
+            sources: None,
+            inputs: None,
+            env: None,
+        };
+        let inputs = InputsDiff {
+            added: Default::default(),
+            removed: Default::default(),
+            changed: vec![InputDiff {
+                path: b"foo.drv".to_vec(),
+                outputs: Some(OutputSetDiff {
+                    added: [b"dev".to_vec()].into(),
+                    removed: Default::default(),
+                }),
+                derivation: Some(Box::new(inner)),
+            }],
+        };
+
+        let mut out = Vec::new();
+        renderer.format_inputs_diff(&mut out, &inputs, 0);
+        let out = String::from_utf8(out).unwrap();
+
+        assert!(out.contains("aarch64-linux"), "nested drv diff missing");
+        assert!(
+            out.contains("dev"),
+            "consumed-output change was swallowed:\n{out}"
+        );
     }
 
     #[test]
