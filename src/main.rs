@@ -2,7 +2,7 @@ use anyhow::{Context, Result, anyhow};
 use nix_diff::{diff, instantiate, parser, render, types};
 use std::env;
 use std::path::{Path, PathBuf};
-use types::{ColorMode, Derivation, DiffOrientation};
+use types::{ColorMode, Derivation, DiffOrientation, RenderOptions};
 
 fn main() {
     // Follow diff(1) exit code convention: 0 = identical, 1 = differ, 2 = error.
@@ -19,9 +19,8 @@ fn main() {
 fn run() -> Result<bool> {
     let args: Vec<String> = env::args().collect();
 
-    let mut color_mode = ColorMode::Auto;
+    let mut opts = RenderOptions::default();
     let mut orientation = DiffOrientation::Line;
-    let mut context_lines = 3;
     let mut paths = Vec::new();
 
     let mut i = 1;
@@ -32,7 +31,7 @@ fn run() -> Result<bool> {
                 if i >= args.len() {
                     return Err(anyhow!("--color requires an argument"));
                 }
-                color_mode = match args[i].as_str() {
+                opts.color_mode = match args[i].as_str() {
                     "always" => ColorMode::Always,
                     "auto" => ColorMode::Auto,
                     "never" => ColorMode::Never,
@@ -56,9 +55,32 @@ fn run() -> Result<bool> {
                 if i >= args.len() {
                     return Err(anyhow!("--context requires an argument"));
                 }
-                context_lines = args[i]
+                opts.context_lines = args[i]
                     .parse()
                     .with_context(|| format!("Invalid context lines: {}", args[i]))?;
+            }
+            "--depth" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err(anyhow!("--depth requires an argument"));
+                }
+                opts.max_depth = Some(
+                    args[i]
+                        .parse()
+                        .with_context(|| format!("Invalid depth: {}", args[i]))?,
+                );
+            }
+            "-v" | "--verbose" => {
+                opts.verbose = true;
+            }
+            "--input-list-limit" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err(anyhow!("--input-list-limit requires an argument"));
+                }
+                opts.input_list_limit = args[i]
+                    .parse()
+                    .with_context(|| format!("Invalid input-list-limit: {}", args[i]))?;
             }
             "-h" | "--help" => {
                 print_help();
@@ -88,11 +110,11 @@ fn run() -> Result<bool> {
     let (drv1, path1) = load_derivation(&paths[0])?;
     let (drv2, path2) = load_derivation(&paths[1])?;
 
-    let mut diff_context = diff::DiffContext::new(orientation, context_lines);
+    let mut diff_context = diff::DiffContext::new(orientation, opts.context_lines);
     let diff = diff_context.diff_derivations(&path1, &path2, &drv1, &drv2)?;
 
-    let renderer = render::Renderer::new(color_mode, context_lines);
-    let differs = renderer.render(&diff)?;
+    let renderer = render::Renderer::new(opts);
+    let differs = renderer.render(&diff, &path1, &path2)?;
 
     Ok(differs)
 }
@@ -110,6 +132,9 @@ fn print_help() {
     eprintln!("  --color <MODE>         Color mode: always, auto, never (default: auto)");
     eprintln!("  --orientation <MODE>   Diff orientation: line, word, character (default: line)");
     eprintln!("  --context <LINES>      Number of context lines (default: 3)");
+    eprintln!("  --input-list-limit <N> Max added/removed inputs to list (default: 10)");
+    eprintln!("  --depth <N>            Max recursion depth into input derivations");
+    eprintln!("  -v, --verbose          Show output-path changes and full input lists");
     eprintln!("  -h, --help             Show this help message");
 }
 

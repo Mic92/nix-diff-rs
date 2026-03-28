@@ -2,11 +2,8 @@
 source: tests/snapshot_test.rs
 expression: output
 ---
-Outputs:
-  Output 'out':
-    Path:
-      - /nix/store/HASH-hello-v1
-      + /nix/store/HASH-hello-v2
+--- /nix/store/HASH-hello-v1.drv
++++ /nix/store/HASH-hello-v2.drv
 Arguments:
   Argument 1:
           mkdir -p $out/bin
@@ -23,35 +20,17 @@ Arguments:
     -     ln -s /nix/store/HASH-dep2/share $out/
     +     ln -s /nix/store/HASH-dep1/bin/dep1 $out/bin/
     +     ln -s /nix/store/HASH-dep2/share $out/
-The input derivation named `dep1.drv` differs
-  Outputs:
-    Output 'out':
-      Path:
-        - /nix/store/HASH-dep1
-        + /nix/store/HASH-dep1
+• dep1.drv
   Arguments:
     Argument 1:
         mkdir -p $out/bin && echo '#!/bin/sh
       - echo Dependency 1' > $out/bin/dep1 && chmod +x $out/bin/dep1
       + echo Dependency 1 updated' > $out/bin/dep1 && chmod +x $out/bin/dep1
-  Environment:
-    out:
-      - /nix/store/HASH-dep1
-      + /nix/store/HASH-dep1
-The input derivation named `dep2.drv` differs
-  Outputs:
-    Output 'out':
-      Path:
-        - /nix/store/HASH-dep2
-        + /nix/store/HASH-dep2
+• dep2.drv
   Arguments:
     Argument 1:
       - mkdir -p $out/share && echo 'Shared data v1' > $out/share/data.txt
       + mkdir -p $out/share && echo 'Shared data v2' > $out/share/data.txt
-  Environment:
-    out:
-      - /nix/store/HASH-dep2
-      + /nix/store/HASH-dep2
 Environment:
   buildScript:
       echo "Starting build process..."
@@ -72,9 +51,6 @@ Environment:
     + hello-v2
   newFeature:
     + true
-  out:
-    - /nix/store/HASH-hello-v1
-    + /nix/store/HASH-hello-v2
   version:
     - 1.0
     + 2.0
