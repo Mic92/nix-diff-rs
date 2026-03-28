@@ -131,10 +131,12 @@ fn test_flake_diff() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    if !output.status.success() {
-        eprintln!("nix-diff failed with stderr: {stderr}");
+    // Exit code 1 means "derivations differ", which is expected here.
+    // Only exit code 2+ indicates an actual error.
+    if output.status.code() != Some(1) {
+        eprintln!("nix-diff exited with {:?}, stderr: {stderr}", output.status);
         eprintln!("stdout: {stdout}");
-        panic!("nix-diff failed");
+        panic!("expected exit code 1 (differs)");
     }
 
     assert_diff_output(&stdout);

@@ -43,15 +43,19 @@ impl Renderer {
         }
     }
 
-    pub fn render(&self, diff: &DerivationDiff) -> io::Result<()> {
+    /// Render the diff to stdout.
+    /// Returns `true` if the derivations differ, `false` if identical.
+    pub fn render(&self, diff: &DerivationDiff) -> io::Result<bool> {
         let mut stdout = io::stdout();
         let output = self.format_derivation_diff(diff, 0);
-        if output.is_empty() {
-            stdout.write_all(b"The derivations are identical.\n")?;
-        } else {
+        let differs = !output.is_empty();
+        if differs {
             stdout.write_all(&output)?;
+        } else {
+            stdout.write_all(b"The derivations are identical.\n")?;
         }
-        stdout.flush()
+        stdout.flush()?;
+        Ok(differs)
     }
 
     fn format_derivation_diff(&self, diff: &DerivationDiff, indent: usize) -> Vec<u8> {
