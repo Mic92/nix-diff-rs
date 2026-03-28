@@ -53,8 +53,9 @@ fn run_nix_diff(file1: &str, file2: &str) -> String {
     let output = cmd.output().expect("Failed to run nix-diff");
 
     assert!(
-        output.status.success(),
-        "nix-diff failed with stderr: {}",
+        matches!(output.status.code(), Some(0 | 1)),
+        "nix-diff errored (exit {:?}) with stderr: {}",
+        output.status.code(),
         String::from_utf8_lossy(&output.stderr)
     );
 
@@ -114,7 +115,7 @@ fn test_hello_diff_with_context() {
     }
     let output = cmd.output().expect("Failed to run nix-diff");
 
-    assert!(output.status.success());
+    assert!(output.status.code() == Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     // Normalize the temporary store path and hashes for consistent snapshots
     let normalized = normalize_nix_output(&stdout, &nix_store_dir);
@@ -160,7 +161,7 @@ fn test_word_diff_orientation() {
     }
     let output = cmd.output().expect("Failed to run nix-diff");
 
-    assert!(output.status.success());
+    assert!(output.status.code() == Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     // Normalize the temporary store path and hashes for consistent snapshots
     let normalized = normalize_nix_output(&stdout, &nix_store_dir);

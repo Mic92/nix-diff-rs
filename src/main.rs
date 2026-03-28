@@ -4,7 +4,19 @@ use std::env;
 use std::path::{Path, PathBuf};
 use types::{ColorMode, Derivation, DiffOrientation};
 
-fn main() -> Result<()> {
+fn main() {
+    // Follow diff(1) exit code convention: 0 = identical, 1 = differ, 2 = error.
+    std::process::exit(match run() {
+        Ok(false) => 0,
+        Ok(true) => 1,
+        Err(e) => {
+            eprintln!("Error: {e:#}");
+            2
+        }
+    });
+}
+
+fn run() -> Result<bool> {
     let args: Vec<String> = env::args().collect();
 
     let mut color_mode = ColorMode::Auto;
@@ -50,7 +62,7 @@ fn main() -> Result<()> {
             }
             "-h" | "--help" => {
                 print_help();
-                return Ok(());
+                return Ok(false);
             }
             arg => {
                 if arg.starts_with('-') {
@@ -66,11 +78,11 @@ fn main() -> Result<()> {
         eprintln!("Error: Expected exactly 2 derivation paths");
         eprintln!();
         print_help();
-        std::process::exit(1);
+        std::process::exit(2);
     }
     if paths[0].as_os_str().is_empty() || paths[1].as_os_str().is_empty() {
         eprintln!("Error: Derivation paths cannot be empty");
-        std::process::exit(1);
+        std::process::exit(2);
     }
 
     let (drv1, path1) = load_derivation(&paths[0])?;
@@ -80,9 +92,9 @@ fn main() -> Result<()> {
     let diff = diff_context.diff_derivations(&path1, &path2, &drv1, &drv2)?;
 
     let renderer = render::Renderer::new(color_mode, context_lines);
-    renderer.render(&diff)?;
+    let differs = renderer.render(&diff)?;
 
-    Ok(())
+    Ok(differs)
 }
 
 fn print_help() {
