@@ -79,6 +79,12 @@ nix-diff .#packages.x86_64-linux.myapp .#packages.x86_64-linux.myapp-dev
 nix-diff path:/path/to/flake1#package path:/path/to/flake2#package
 ```
 
+Limit recursion depth (useful when stdenv changed and you only care about
+the top-level differences):
+```bash
+nix-diff --depth 1 nixpkgs/nixos-25.11#hello nixpkgs/nixos-unstable#hello
+```
+
 Disable colors:
 ```bash
 nix-diff --color never input1 input2
