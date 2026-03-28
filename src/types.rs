@@ -98,7 +98,13 @@ pub enum OutputDetailDiff {
     },
 }
 
-pub type ArgumentsDiff = Vec<StringDiff>;
+pub type ArgumentsDiff = Vec<ArgumentDiff>;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArgumentDiff {
+    pub index: usize,
+    pub diff: StringDiff,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SourcesDiff {

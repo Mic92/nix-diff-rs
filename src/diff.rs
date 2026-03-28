@@ -130,9 +130,12 @@ impl DiffContext {
             let arg2 = args2.get(i).map(|s| s.as_slice()).unwrap_or(b"");
 
             if arg1 != arg2 {
-                diffs.push(StringDiff {
-                    old: arg1.to_vec(),
-                    new: arg2.to_vec(),
+                diffs.push(ArgumentDiff {
+                    index: i,
+                    diff: StringDiff {
+                        old: arg1.to_vec(),
+                        new: arg2.to_vec(),
+                    },
                 });
             }
         }
@@ -404,5 +407,28 @@ impl DiffContext {
         }
 
         TextDiff::Text(lines)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ctx() -> DiffContext {
+        DiffContext::new(DiffOrientation::Line, 3)
+    }
+
+    #[test]
+    fn diff_arguments_preserves_positional_index() {
+        // Only argument at index 1 differs. The diff must record index 1,
+        // not compact to index 0, so the renderer can show the correct position.
+        let args1 = vec![b"a".to_vec(), b"b".to_vec(), b"c".to_vec()];
+        let args2 = vec![b"a".to_vec(), b"X".to_vec(), b"c".to_vec()];
+
+        let diffs = ctx().diff_arguments(&args1, &args2).unwrap();
+        assert_eq!(diffs.len(), 1);
+        assert_eq!(diffs[0].index, 1);
+        assert_eq!(diffs[0].diff.old, b"b");
+        assert_eq!(diffs[0].diff.new, b"X");
     }
 }

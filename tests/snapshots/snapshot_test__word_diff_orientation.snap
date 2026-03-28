@@ -8,7 +8,7 @@ Outputs:
       - /nix/store/HASH-hello-v1
       + /nix/store/HASH-hello-v2
 Arguments:
-  Argument 0:
+  Argument 1:
           mkdir -p $out/bin
           cat > $out/bin/hello << 'EOF'
       #!/bin/sh
@@ -30,7 +30,7 @@ The input derivation named `dep1.drv` differs
         - /nix/store/HASH-dep1
         + /nix/store/HASH-dep1
   Arguments:
-    Argument 0:
+    Argument 1:
         mkdir -p $out/bin && echo '#!/bin/sh
       - echo Dependency 1' > $out/bin/dep1 && chmod +x $out/bin/dep1
       + echo Dependency 1 updated' > $out/bin/dep1 && chmod +x $out/bin/dep1
@@ -45,7 +45,7 @@ The input derivation named `dep2.drv` differs
         - /nix/store/HASH-dep2
         + /nix/store/HASH-dep2
   Arguments:
-    Argument 0:
+    Argument 1:
       - mkdir -p $out/share && echo 'Shared data v1' > $out/share/data.txt
       + mkdir -p $out/share && echo 'Shared data v2' > $out/share/data.txt
   Environment:

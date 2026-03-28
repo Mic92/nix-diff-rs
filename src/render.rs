@@ -79,17 +79,22 @@ impl Renderer {
 
         if let Some(arg_diffs) = args {
             self.write_section(&mut output, b"Arguments", indent);
-            for (i, arg_diff) in arg_diffs.iter().enumerate() {
+            for arg_diff in arg_diffs {
                 self.write_indent(&mut output, indent + 2);
-                extend!(output, b"Argument ", i.to_string().as_bytes(), b":\n");
+                extend!(
+                    output,
+                    b"Argument ",
+                    arg_diff.index.to_string().as_bytes(),
+                    b":\n"
+                );
                 // For multi-line arguments (like scripts), show them as a text diff
-                let StringDiff { old, new } = arg_diff;
+                let StringDiff { old, new } = &arg_diff.diff;
                 if old.contains(&b'\n') || new.contains(&b'\n') {
                     // Create a proper line-by-line diff
                     let text_diff = self.create_text_diff(old, new);
                     self.format_text_diff(&mut output, &text_diff, indent + 4);
                 } else {
-                    self.format_string_diff(&mut output, arg_diff, indent + 4);
+                    self.format_string_diff(&mut output, &arg_diff.diff, indent + 4);
                 }
             }
         }
