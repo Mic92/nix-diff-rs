@@ -16,7 +16,7 @@ anyhow = { version = "1.0", default-features = false, features = ["std"] }
 harmonia-store-aterm = { git = "https://github.com/nix-community/harmonia", branch = "nix-2.34" }
 harmonia-store-core = { git = "https://github.com/nix-community/harmonia", branch = "nix-2.34" }
 harmonia-utils-hash = { git = "https://github.com/nix-community/harmonia", branch = "nix-2.34" }
-similar = { version = "2.7", features = ["bytes", "text", "inline"], default-features = false }
+similar = { version = "3.0", features = ["bytes", "text", "inline"], default-features = false }
 tempfile = { version = "3.27", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
