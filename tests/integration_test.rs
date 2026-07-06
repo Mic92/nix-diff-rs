@@ -141,3 +141,39 @@ fn test_flake_diff() {
 
     assert_diff_output(&stdout);
 }
+
+#[test]
+fn test_flake_diff_short_attr() {
+    let tests_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let (_nix_root, env_vars) = setup_nix_env();
+
+    // Use the short-form `#default` (no system prefix) — this exercises the
+    // packages/legacyPackages resolution added to fix issue #102.
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_nix-diff"));
+    cmd.args([
+        &format!(
+            "path:{}#default",
+            tests_dir.join("hello-flake-v1").to_str().unwrap()
+        ),
+        &format!(
+            "path:{}#default",
+            tests_dir.join("hello-flake-v2").to_str().unwrap()
+        ),
+    ])
+    .env("NO_COLOR", "1");
+    for (key, value) in &env_vars {
+        cmd.env(key, value);
+    }
+    let output = cmd.output().expect("Failed to run nix-diff");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if output.status.code() != Some(1) {
+        eprintln!("nix-diff exited with {:?}, stderr: {stderr}", output.status);
+        eprintln!("stdout: {stdout}");
+        panic!("expected exit code 1 (differs)");
+    }
+
+    assert_diff_output(&stdout);
+}

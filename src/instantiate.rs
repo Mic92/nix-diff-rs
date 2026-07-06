@@ -61,10 +61,35 @@ fn instantiate_flake(flake_ref: &str, gcroot_path: &Path) -> Result<String> {
 
     let (store_path, nar_hash) = extract_flake_fields(&metadata_str)?;
 
-    // Create expression to evaluate the flake with narHash for pure evaluation
-    let expression = format!("(builtins.getFlake \"path:{store_path}?narHash={nar_hash}\").{attr}");
-
+    let expression = build_flake_expression(&store_path, &nar_hash, attr);
     instantiate_expression(&expression, gcroot_path)
+}
+
+/// Build a Nix expression that evaluates a flake attribute, mirroring the
+/// packages/legacyPackages resolution that `nix build` applies.
+///
+/// For any attr — single-component (`samba`) or dotted (`foo.unwrapped`) —
+/// this tries in order:
+///   1. top-level output  (`f.<attr>`)
+///   2. `f.packages.<system>.<attr>`
+///   3. `f.legacyPackages.<system>.<attr>`
+///
+/// The has-attr operator (`?`) accepts dotted attrpaths and returns false
+/// rather than throwing when any intermediate attribute is missing, so
+/// fully-qualified attrs like `packages.x86_64-linux.samba` are handled
+/// correctly by branch 1 without a separate code path.
+fn build_flake_expression(store_path: &str, nar_hash: &str, attr: &str) -> String {
+    let flake_expr = format!("builtins.getFlake \"path:{store_path}?narHash={nar_hash}\"");
+
+    format!(
+        "let f = {flake_expr}; s = builtins.currentSystem; in \
+         if f ? {attr} then f.{attr} \
+         else if f ? packages && f.packages ? ${{s}} && f.packages.${{s}} ? {attr} \
+         then f.packages.${{s}}.{attr} \
+         else if f ? legacyPackages && f.legacyPackages ? ${{s}} && f.legacyPackages.${{s}} ? {attr} \
+         then f.legacyPackages.${{s}}.{attr} \
+         else throw \"attribute '{attr}' not found in flake\""
+    )
 }
 
 #[derive(serde::Deserialize)]
@@ -184,5 +209,33 @@ mod tests {
         let (p, h) = extract_flake_fields(json).unwrap();
         assert_eq!(p, "/nix/store/x");
         assert_eq!(h, "sha256-abc");
+    }
+
+    #[test]
+    fn build_flake_expression_single_attr_has_resolution_logic() {
+        let expr = build_flake_expression("/nix/store/x", "sha256-abc", "samba");
+        // Must contain all three fallback branches.
+        assert!(expr.contains("f ? samba"), "missing top-level check: {expr}");
+        assert!(expr.contains("f ? packages"), "missing packages branch: {expr}");
+        assert!(
+            expr.contains("f ? legacyPackages"),
+            "missing legacyPackages branch: {expr}"
+        );
+        assert!(expr.contains("builtins.currentSystem"), "missing system: {expr}");
+    }
+
+    #[test]
+    fn build_flake_expression_dotted_attr_has_resolution_logic() {
+        // Dotted attrs like `foo.unwrapped` or `packages.x86_64-linux.samba`
+        // must also go through resolution — the top-level `f ? <attr>` branch
+        // handles the already-qualified case without a separate code path.
+        let expr = build_flake_expression("/nix/store/x", "sha256-abc", "foo.unwrapped");
+        assert!(expr.contains("f ? foo.unwrapped"), "missing top-level check: {expr}");
+        assert!(expr.contains("f ? packages"), "missing packages branch: {expr}");
+        assert!(expr.contains("f ? legacyPackages"), "missing legacyPackages branch: {expr}");
+        // A fully-qualified path works the same way; f ? packages.x86_64-linux.samba
+        // will succeed in branch 1 so branches 2 and 3 are never reached.
+        let expr2 = build_flake_expression("/nix/store/x", "sha256-abc", "packages.x86_64-linux.samba");
+        assert!(expr2.contains("f ? packages.x86_64-linux.samba"), "missing top-level check: {expr2}");
     }
 }
