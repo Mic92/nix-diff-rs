@@ -494,7 +494,14 @@ impl Renderer {
             }
             for op in group {
                 if self.inline_highlight {
-                    for change in diff.iter_inline_changes(op) {
+                    // matching on UnicodeWords better tokenizes words, paths, and other
+                    // non-space-delimited items, which gets us much more reliable inline
+                    // highlights
+                    for change in diff.iter_inline_changes_with_options(
+                        op,
+                        *similar::InlineChangeOptions::new()
+                            .mode(similar::InlineChangeMode::UnicodeWords),
+                    ) {
                         let (color, sign): (&[u8], &[u8]) = match change.tag() {
                             ChangeTag::Delete => (self.red(), b"- "),
                             ChangeTag::Insert => (self.green(), b"+ "),
