@@ -5,6 +5,29 @@ use std::process::Command;
 mod common;
 use common::setup_nix_env;
 
+// Normalize store paths and hashes that have readable escape characters for consistent snapshots
+fn normalize_readable_nix_output(output: &str, store_dir: &str) -> String {
+    // Replace custom store path with /nix/store
+    let mut normalized = output.replace(store_dir, "/nix/store");
+
+    // Replace all hashes with "HASH"
+
+    // match against the file path diffs, which are never inline highlighted
+    let re = regex::Regex::new(r"^<red>\-\-\- /nix/store/[a-z0-9]{32}-").unwrap();
+    normalized = re
+        .replace_all(&normalized, r"<red>--- /nix/store/HASH-")
+        .to_string();
+
+    let re = regex::Regex::new(r"<grn>\+\+\+ /nix/store/[a-z0-9]{32}-").unwrap();
+    normalized = re
+        .replace_all(&normalized, r"<grn>+++ /nix/store/HASH-")
+        .to_string();
+
+    let re = regex::Regex::new(r"/nix/store/(<rev>)[a-z0-9]{32}(</rev>)-").unwrap();
+    re.replace_all(&normalized, r"/nix/store/<rev>HASH</rev>-")
+        .to_string()
+}
+
 // Normalize store paths and hashes for consistent snapshots
 fn normalize_nix_output(output: &str, store_dir: &str) -> String {
     // Replace custom store path with /nix/store
@@ -156,11 +179,10 @@ fn test_inline_highlight_snapshot() {
 
     assert_eq!(output.status.code(), Some(1));
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let normalized = normalize_nix_output(&stdout, &nix_store_dir);
 
     // Render ANSI escapes as readable tokens so the snapshot shows
     // exactly where reverse-video begins/ends.
-    let readable = normalized
+    let readable = stdout
         .replace("\x1b[7m", "<rev>")
         .replace("\x1b[27m", "</rev>")
         .replace("\x1b[31m", "<red>")
@@ -171,9 +193,11 @@ fn test_inline_highlight_snapshot() {
         .replace("\x1b[2m", "<dim>")
         .replace("\x1b[0m", "</>");
 
+    let normalized = normalize_readable_nix_output(&readable, &nix_store_dir);
+
     assert!(
-        readable.contains("<rev>"),
+        normalized.contains("<rev>"),
         "expected reverse-video escapes for inline highlighting"
     );
-    assert_snapshot!(readable);
+    assert_snapshot!(normalized);
 }
